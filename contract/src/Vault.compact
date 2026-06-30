@@ -1,0 +1,163 @@
+// SPDX-License-Identifier: Apache-2.0
+// Midnight Vault — unshielded multisig treasury
+
+pragma language_version >= 0.23.0;
+
+// Real, enforced M-of-N over unshielded (NIGHT) value, built on OpenZeppelin's
+// proven async-approval model (the ShieldedMultiSig V1 preset), adapted to
+// unshielded custody.
+//
+// Why this model and not OZ's V2/V3 signature-bundle presets: those verify an
+// off-chain ECDSA signature bundle in one transaction, but Compact has no ECDSA
+// primitive, so their check is a stub that always returns true. This model needs
+// no signature primitive — identity is the caller's on-chain `ownPublicKey()`
+// (unforgeable, supplied by tx context, never a free witness), and M-of-N is
+// accumulated on-chain across separate per-signer approval transactions. The
+// whole unshielded path is therefore witness-free.
+//
+// Custody is unshielded here. Shielded custody + confidential amounts (ElGamal)
+// are a later iteration. Full rationale + module study: docs/oz-study.md.
+
+import CompactStandardLibrary;
+
+import "../oz/multisig/ProposalManager" prefix Proposal_;
+import "../oz/multisig/UnshieldedTreasury" prefix Treasury_;
+import "../oz/multisig/SignerManager"<Either<ZswapCoinPublicKey, ContractAddress>> prefix Signer_;
+
+// ─── State ───────────────────────────────────────────────────────────────
+
+// Per-proposal approval set + tally. This is the on-chain accumulation that
+// makes M-of-N real across separate per-signer transactions (one approval each).
+export ledger _proposalApprovals: Map<Uint<64>, Map<Either<ZswapCoinPublicKey, ContractAddress>, Boolean>>;
+export ledger _approvalCount: Map<Uint<64>, Uint<8>>;
+
+// ─── Constructor ─────────────────────────────────────────────────────────
+
+// Fixed 3-signer set with a runtime threshold (1..3). Contract-address signers
+// may be registered for forward compatibility but cannot authenticate until
+// contract-to-contract calls exist (getCaller resolves via ownPublicKey only).
+constructor(
+  signers: Vector<3, Either<ZswapCoinPublicKey, ContractAddress>>,
+  thresh: Uint<8>
+) {
+  Signer_initialize<3>(signers, thresh);
+}
+
+// ─── Deposit (permissionless) ──────────────────────────────────────────────
+
+// Anyone may fund the treasury. The unshielded tokens are claimed at the
+// protocol level (receiveUnshielded) inside Treasury__deposit, in this same tx.
+export circuit depositUnshielded(color: Bytes<32>, amount: Uint<128>): [] {
+  Treasury__deposit(color, amount);
+}
+
+// ─── Proposal lifecycle ────────────────────────────────────────────────────
+
+export circuit proposeWithdrawal(
+  to: Proposal_Recipient,
+  color: Bytes<32>,
+  amount: Uint<128>
+): Uint<64> {
+  Signer_assertSigner(getCaller());
+  assert(
+    to.kind == Proposal_RecipientKind.UnshieldedUser
+      || to.kind == Proposal_RecipientKind.Contract,
+    "Vault: recipient must be an unshielded user or contract"
+  );
+  return Proposal__createProposal(to, color, amount);
+}
+
+export circuit approve(id: Uint<64>): [] {
+  Proposal_assertProposalActive(id);
+  const callerPK = getCaller();
+  Signer_assertSigner(callerPK);
+  assert(!isApprovedBySigner(id, callerPK), "Vault: already approved");
+  _approve(id, callerPK);
+}
+
+export circuit revokeApproval(id: Uint<64>): [] {
+  Proposal_assertProposalActive(id);
+  const callerPK = getCaller();
+  Signer_assertSigner(callerPK);
+  assert(isApprovedBySigner(id, callerPK), "Vault: not approved");
+  _revokeApproval(id, callerPK);
+}
+
+// Permissionless once the threshold is met — anyone can settle an approved
+// proposal; the approvals are the authorization, not the executor's identity.
+export circuit execute(id: Uint<64>): [] {
+  Proposal_assertProposalActive(id);
+  Signer_assertThresholdMet(getApprovalCount(id));
+
+  const { to, color, amount } = Proposal_getProposal(id);
+  Treasury__send(Proposal_toUnshieldedRecipient(to), color, amount);
+
+  Proposal__markExecuted(id);
+}
+
+// ─── Internal ──────────────────────────────────────────────────────────────
+
+circuit _approve(id: Uint<64>, signer: Either<ZswapCoinPublicKey, ContractAddress>): [] {
+  if (!_proposalApprovals.member(disclose(id))) {
+    _proposalApprovals.insert(disclose(id), default<Map<Either<ZswapCoinPublicKey, ContractAddress>, Boolean>>);
+  }
+  _proposalApprovals.lookup(disclose(id)).insert(disclose(signer), disclose(true));
+
+  const newCount = getApprovalCount(id) + 1 as Uint<8>;
+  _approvalCount.insert(disclose(id), disclose(newCount));
+}
+
+circuit _revokeApproval(id: Uint<64>, signer: Either<ZswapCoinPublicKey, ContractAddress>): [] {
+  _proposalApprovals.lookup(disclose(id)).remove(disclose(signer));
+
+  const newCount = getApprovalCount(id) - 1 as Uint<8>;
+  _approvalCount.insert(disclose(id), disclose(newCount));
+}
+
+circuit getCaller(): Either<ZswapCoinPublicKey, ContractAddress> {
+  return left<ZswapCoinPublicKey, ContractAddress>(ownPublicKey());
+}
+
+// ─── Views ───────────────────────────────────────────────────────────────
+
+export circuit isApprovedBySigner(
+  id: Uint<64>,
+  signer: Either<ZswapCoinPublicKey, ContractAddress>
+): Boolean {
+  if (!_proposalApprovals.member(disclose(id))
+      || !_proposalApprovals.lookup(disclose(id)).member(disclose(signer))) {
+    return false;
+  }
+  return _proposalApprovals.lookup(disclose(id)).lookup(disclose(signer));
+}
+
+export circuit getApprovalCount(id: Uint<64>): Uint<8> {
+  if (!_approvalCount.member(disclose(id))) {
+    return 0;
+  }
+  return _approvalCount.lookup(disclose(id));
+}
+
+export circuit getUnshieldedBalance(color: Bytes<32>): Uint<128> {
+  return Treasury_getTokenBalance(color);
+}
+
+export circuit getProposal(id: Uint<64>): Proposal_Proposal {
+  return Proposal_getProposal(id);
+}
+
+export circuit getProposalStatus(id: Uint<64>): Proposal_ProposalStatus {
+  return Proposal_getProposalStatus(id);
+}
+
+export circuit getSignerCount(): Uint<8> {
+  return Signer_getSignerCount();
+}
+
+export circuit getThreshold(): Uint<8> {
+  return Signer_getThreshold();
+}
+
+export circuit isSigner(account: Either<ZswapCoinPublicKey, ContractAddress>): Boolean {
+  return Signer_isSigner(account);
+}
