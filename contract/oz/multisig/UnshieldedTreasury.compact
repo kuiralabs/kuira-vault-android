@@ -51,11 +51,11 @@ module UnshieldedTreasury {
    * @returns {[]} Empty tuple.
    */
   export circuit _deposit(color: Bytes<32>, amount: Uint<128>): [] {
-    assert(
-      unshieldedBalanceLte(disclose(color), Utils_UINT128_MAX() - disclose(amount)),
-      "UnshieldedTreasury: overflow"
-    );
-
+    // KUIRA WORKAROUND (docs/oz-unshielded-treasury-u128-bug.md): the upstream guard
+    // `unshieldedBalanceLte(color, UINT128_MAX - amount)` feeds a ~2^128 bound into the
+    // ledger VM's u64 `lt` op -> InvalidBuiltinDecode("u64"). The `bal + amount as
+    // Uint<128>` cast below already rejects a u128 overflow, so this guard is redundant;
+    // dropped until the toolchain supports u128 comparison on the protocol balance.
     receiveUnshielded(disclose(color), disclose(amount));
 
     const bal = getTokenBalance(color);
@@ -86,8 +86,12 @@ module UnshieldedTreasury {
     color: Bytes<32>,
     amount: Uint<128>
   ): [] {
+    // KUIRA WORKAROUND (docs/oz-unshielded-treasury-u128-bug.md): the upstream guard
+    // `unshieldedBalanceGte(color, amount)` routes through the ledger VM's u64 `lt` op.
+    // Use the module's own tracked balance (mirrors the protocol balance, compared
+    // in-circuit); the `bal - amount as Uint<128>` cast below also rejects underflow.
     assert(
-      unshieldedBalanceGte(disclose(color), disclose(amount)),
+      getTokenBalance(color) >= disclose(amount),
       "UnshieldedTreasury: insufficient balance"
     );
 

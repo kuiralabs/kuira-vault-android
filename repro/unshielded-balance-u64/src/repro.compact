@@ -1,0 +1,10 @@
+pragma language_version >= 0.23.0;
+
+import CompactStandardLibrary;
+
+// Minimal repro: unshieldedBalanceLte accepts a Uint<128> value, but the ledger VM
+// evaluates the comparison as u64. 18446744073709551616 = 2^64 (one over u64::MAX),
+// so this bound cannot be decoded -> Execution(Decode(InvalidBuiltinDecode("u64"))).
+export circuit checkOverflow(color: Bytes<32>): Boolean {
+  return unshieldedBalanceLte(disclose(color), 18446744073709551616 as Uint<128>);
+}

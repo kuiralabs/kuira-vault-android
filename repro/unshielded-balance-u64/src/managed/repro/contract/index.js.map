@@ -1,0 +1,8 @@
+{
+  "version": 3,
+  "file": "index.js",
+  "sourceRoot": "../../../../",
+  "sources": ["src/repro.compact", "compiler/standard-library.compact"],
+  "names": [],
+  "mappings": ";;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;EAAA;;;;;;;;;;MAOA,AAAA,aAEC;;;;;cAF4B,OAAgB;;;;;;;;;;;;;;;;;;yCAAhB,OAAgB;;;;;;;;;+CAAhB,OAAgB;;;OAE5C;;;;GACA;EAVD;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;GAUC;EC2BD,AAAA,QAA0B;kCACkB;;EAmT5C,AAAA,kDAAmC,SAAkB;UAC5C,qBAAqD;mCAArD;;;;0JAA6D;;;;;;;;;;;0JAA7D;;;;;;;;;;;;;8HAAA;;;;;;EAGT,AAAA,mDAAoC,SAAkB;;;wCACxB;wCAAO;;EDvVrC,AAAA,gBAEC,4BAF4B,OAAgB;;;wCACN,OAAK;;GAC3C;;;;;;;;;;;;;;;;;;;;;;;;;"
+}

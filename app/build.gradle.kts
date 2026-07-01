@@ -24,6 +24,7 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
     buildTypes {
@@ -59,11 +60,12 @@ kotlin {
 // ─── Contract assets ───────────────────────────────────────────────
 // The io.github.kuiralabs.contract plugin syncs the compiled Compact
 // artifacts from the contract source into the app's assets before each
-// build: the runtime JS as assets/runtime/counter-contract.js and the
-// circuit keys as assets/keys/increment.{prover,verifier,bzkir}.
-// CounterContract reads those canonical paths at runtime.
+// build: the runtime JS as assets/runtime/vault-contract.js and each
+// circuit's keys as assets/keys/<circuit>.{prover,verifier,bzkir}.
+// VaultContract reads those canonical paths at runtime.
 kuiraContract {
-    source.set("../contract/src/managed/counter")
+    source.set("../contract/src/managed/Vault")
+    alias.set("vault")
     // Offline bundle (#256): ship the protocol wallet proving keys in the APK so a
     // fresh device proves without the runtime S3 download. ~33MB; downloaded once
     // at build time into a shared Gradle cache, then staged into assets/wallet-keys.
@@ -95,4 +97,12 @@ dependencies {
     implementation(libs.androidx.security.crypto)
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
+
+    // Instrumented on-chain e2e (VaultDeployE2ETest): deploy the Vault multisig via
+    // the SDK on localnet, then deposit. Exercises the alpha05 SDK from mavenLocal.
+    androidTestImplementation("junit:junit:4.13.2")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test:rules:1.6.1")
+    androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
 }
