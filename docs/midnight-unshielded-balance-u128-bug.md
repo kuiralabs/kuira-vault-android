@@ -1,9 +1,14 @@
 # Bug report — `unshieldedBalance*` builtins accept `Uint<128>` but compare as `u64` (ledger VM `lt`)
 
-Primary report for the **Midnight** toolchain (`compactc` / `midnight-ledger`). The
-issue surfaces through OpenZeppelin's `UnshieldedTreasury`, but the root cause is a
-Midnight-internal inconsistency: unshielded balances are stored/typed as `u128`,
-yet the ledger VM's comparison op evaluates as `u64`.
+Primary report for the **Midnight** toolchain. The issue surfaces through OpenZeppelin's
+`UnshieldedTreasury`, but the root cause is a Midnight-internal inconsistency: unshielded
+balances are stored/typed as `u128`, yet the ledger VM's comparison op evaluates as `u64`.
+
+**Where to file** (verified NOT already reported as of 2026-07-01): the root is in
+`midnightntwrk/midnight-ledger` (the VM `lt` op, `onchain-vm/src/vm.rs`); if the fix is judged to
+belong to codegen instead, `midnightntwrk/compact` (the stdlib emitting a u64 compare). Checked
+midnight-ledger issues (46 total — no match) and OpenZeppelin/compact-contracts (only the closed
+feature issue #479, no bug).
 
 ## Summary
 
