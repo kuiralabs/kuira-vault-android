@@ -110,6 +110,17 @@ internal object VaultContract {
             context, sdk, address = address, forWrite = true,
             constructorArgs = callConstructorArgs(),
         )
-        handle.call("depositUnshielded", color, amount, onProgress = onProgress)
+        // Fund the value the treasury claims via receiveUnshielded: the SDK selects wallet
+        // NIGHT UTXOs covering `amount` (+ change) and the native assembler adds + signs the
+        // guaranteed unshielded offer. Without this the unshielded segment underflows → node
+        // error 138 (BalanceCheckOverspend).
+        val fundingJson = sdk.buildUnshieldedFundingJson(amount, tokenType = color.toHex())
+        handle.call(
+            "depositUnshielded", color, amount,
+            onProgress = onProgress,
+            unshieldedFundingJson = fundingJson,
+        )
     }
+
+    private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
 }
