@@ -1,6 +1,7 @@
 package com.kuiralabs.starter.counter.data
 
 import android.content.Context
+import com.midnight.kuira.core.compact.CompactEnum
 import com.midnight.kuira.core.compact.ContractCallStage
 import com.midnight.kuira.core.compact.MidnightContract
 import com.midnight.kuira.core.compact.proving.ProvingKeyManager
@@ -121,6 +122,90 @@ internal object VaultContract {
             unshieldedFundingJson = fundingJson,
         )
     }
+
+    /**
+     * Propose an unshielded withdrawal of [amount] of token [color] to [recipientAddressHash]
+     * (a 32-byte UserAddress). Signer-gated — the calling wallet's key must be a Vault signer.
+     * The first proposal on a fresh Vault has id 1.
+     */
+    suspend fun proposeWithdrawal(
+        context: Context,
+        sdk: MidnightSdk,
+        address: String,
+        recipientAddressHash: ByteArray,
+        color: ByteArray,
+        amount: BigInteger,
+        onProgress: (suspend (ContractCallStage) -> Unit)? = null,
+    ) {
+        installProvingKeys(context)
+        val handle = buildHandle(
+            context, sdk, address = address, forWrite = true,
+            constructorArgs = callConstructorArgs(),
+        )
+        // Recipient { kind: RecipientKind (enum, JS number), address: Bytes<32> }.
+        val recipient = mapOf(
+            "kind" to CompactEnum(RECIPIENT_KIND_UNSHIELDED_USER),
+            "address" to recipientAddressHash,
+        )
+        handle.call("proposeWithdrawal", recipient, color, amount, onProgress = onProgress)
+    }
+
+    /**
+     * Approve proposal [proposalId] as the calling wallet (must be a signer and not have already
+     * approved). Reaching finalization proves the signer-gating + approval accounting passed.
+     */
+    suspend fun approve(
+        context: Context,
+        sdk: MidnightSdk,
+        address: String,
+        proposalId: Long,
+        onProgress: (suspend (ContractCallStage) -> Unit)? = null,
+    ) {
+        installProvingKeys(context)
+        val handle = buildHandle(
+            context, sdk, address = address, forWrite = true,
+            constructorArgs = callConstructorArgs(),
+        )
+        handle.call("approve", BigInteger.valueOf(proposalId), onProgress = onProgress)
+    }
+
+    /**
+     * Execute approved proposal [proposalId], sending [amount] of [color] to
+     * [recipientAddressHash]. Permissionless once the threshold is met (any caller). The
+     * recipient/color/amount must match the proposal — the contract's Treasury__send claims that
+     * exact spend, and the SDK-built withdrawal offer names the matching recipient output.
+     * Reaching finalization proves the threshold check + the withdrawal money path.
+     */
+    suspend fun execute(
+        context: Context,
+        sdk: MidnightSdk,
+        address: String,
+        proposalId: Long,
+        recipientAddressHash: ByteArray,
+        color: ByteArray,
+        amount: BigInteger,
+        onProgress: (suspend (ContractCallStage) -> Unit)? = null,
+    ) {
+        installProvingKeys(context)
+        val handle = buildHandle(
+            context, sdk, address = address, forWrite = true,
+            constructorArgs = callConstructorArgs(),
+        )
+        // The contract SENDS value out (Treasury__send -> sendUnshielded); the withdrawal offer
+        // provides the matching recipient output (no inputs/signature — the contract has the funds).
+        val withdrawalJson = sdk.buildUnshieldedWithdrawalJson(
+            recipientAddressHash = recipientAddressHash,
+            amount = amount,
+            tokenType = color.toHex(),
+        )
+        handle.call(
+            "execute", BigInteger.valueOf(proposalId),
+            onProgress = onProgress,
+            unshieldedWithdrawalJson = withdrawalJson,
+        )
+    }
+
+    private const val RECIPIENT_KIND_UNSHIELDED_USER = 1
 
     private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
 }

@@ -5,6 +5,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.kuiralabs.starter.counter.data.VaultContract
 import com.midnight.kuira.core.compact.ContractCallException
+import com.midnight.kuira.core.crypto.address.Bech32m
 import com.midnight.kuira.core.compact.proving.ProvingKeyManager
 import com.midnight.kuira.core.crypto.bip39.BIP39
 import com.midnight.kuira.core.crypto.proving.ProvingMode
@@ -34,18 +35,17 @@ import java.math.BigInteger
 class VaultDeployE2ETest {
 
     private val context = InstrumentationRegistry.getInstrumentation().targetContext
-    private var sdk: MidnightSdk? = null
+    private val openSdks = mutableListOf<MidnightSdk>()
 
     @After
     fun tearDown() {
-        sdk?.let { runCatching { it.close() } }
-        sdk = null
+        openSdks.forEach { runCatching { it.close() } }
+        openSdks.clear()
     }
 
     @Test
     fun deploy_succeeds() = runBlocking {
         val s = fundedSdk(nightWhole = 50)
-        sdk = s
 
         val address = deployVault(s)
 
@@ -59,31 +59,114 @@ class VaultDeployE2ETest {
     @Test
     fun deposit_credits() = runBlocking {
         val s = fundedSdk(nightWhole = 50)
-        sdk = s
 
         val address = deployVault(s)
         Log.i(TAG, "Vault deployed at $address; depositing NIGHT into the treasury")
 
-        // Deposit native NIGHT into the treasury. The native unshielded token color is 32 zero bytes
-        // (UtxoSpend.NATIVE_TOKEN_TYPE). This exercises receiveUnshielded — the Key::Stack op #15
-        // fixed — funding a CONTRACT with a real wallet UTXO (the UTXO->contract path, #30).
-        val nativeColor = ByteArray(32) // all-zeros = NATIVE_TOKEN_TYPE (NIGHT)
-        val amount = BigInteger.valueOf(5_000_000L) // 5 NIGHT (6 decimals)
+        // Deposit native NIGHT into the treasury. Exercises receiveUnshielded — funding a CONTRACT
+        // with a real wallet UTXO (the UTXO->contract money path, #30).
+        val reachedSubmit = deposit(s, address, BigInteger.valueOf(5_000_000L))
 
-        // deploy() returns a NODE-finalized address, but the indexer exposes the new contract a
-        // beat later — a deposit immediately after can race "Contract not found". The state fetch
-        // fails fast (before any proving), so retry cheaply until the contract is indexed.
+        assertTrue(
+            "deposit must reach on-chain submission/finalization",
+            reachedSubmit,
+        )
+    }
+
+    /**
+     * Full 2-of-3 multisig governance on a real node: three distinct signer wallets deploy a Vault,
+     * fund it, then propose → approve (to threshold) → execute a withdrawal. Each circuit's asserts
+     * run client-side during proving, so reaching finalization proves the on-chain invariants held
+     * (a non-signer/duplicate approval, or execute below threshold, would throw before submit); the
+     * node additionally rejects a withdrawal whose offer output doesn't match the contract's claimed
+     * spend, so execute finalizing proves the withdrawal money path end-to-end.
+     */
+    @Test
+    fun governance_full_flow_2of3() = runBlocking<Unit> {
+        val a = fundedSdk(nightWhole = 50)
+        val b = fundedSdk(nightWhole = 20)
+        val c = fundedSdk(nightWhole = 20)
+
+        // Deploy a 2-of-3 Vault whose signers are the three wallets' real coin public keys.
+        val address = deployVaultWith(
+            deployer = a,
+            signerCoinPublicKeys = listOf(a.coinPublicKey, b.coinPublicKey, c.coinPublicKey),
+            threshold = 2,
+        )
+        Log.i(TAG, "2-of-3 Vault deployed at $address")
+
+        // Fund the treasury so there is something to withdraw.
+        assertTrue("deposit must finalize", deposit(a, address, BigInteger.valueOf(5_000_000L)))
+
+        // Signer A proposes a withdrawal (first proposal on a fresh Vault has id 1).
+        val recipientHash = Bech32m.decode(a.walletAddress).second
+        var proposeSubmitted = false
+        VaultContract.proposeWithdrawal(
+            context, a, address,
+            recipientAddressHash = recipientHash,
+            color = ByteArray(32),
+            amount = BigInteger.valueOf(2_000_000L),
+        ) { stage -> if (stage.toString().contains("Submitting")) proposeSubmitted = true }
+        assertTrue("proposeWithdrawal (signer-gated) must finalize", proposeSubmitted)
+        Log.i(TAG, "Proposal 1 created by signer A")
+
+        // Two distinct signers approve → meets the threshold of 2.
+        var approveA = false
+        VaultContract.approve(context, a, address, proposalId = FIRST_PROPOSAL_ID) { stage ->
+            if (stage.toString().contains("Submitting")) approveA = true
+        }
+        var approveB = false
+        VaultContract.approve(context, b, address, proposalId = FIRST_PROPOSAL_ID) { stage ->
+            if (stage.toString().contains("Submitting")) approveB = true
+        }
+        assertTrue("signer A approval must finalize", approveA)
+        assertTrue("signer B approval must finalize (distinct signer, threshold met)", approveB)
+        Log.i(TAG, "Proposal 1 approved by signers A + B (2/2 threshold)")
+
+        // Permissionless execute (wallet C — not a required approver): the threshold is the
+        // authorization, not the executor's identity. Treasury__send → sendUnshielded creates the
+        // recipient UTXO for A; the SDK-built withdrawal offer names the matching output.
+        var executeSubmitted = false
+        VaultContract.execute(
+            context, c, address,
+            proposalId = FIRST_PROPOSAL_ID,
+            recipientAddressHash = recipientHash,
+            color = ByteArray(32),
+            amount = BigInteger.valueOf(2_000_000L),
+        ) { stage -> if (stage.toString().contains("Submitting")) executeSubmitted = true }
+        assertTrue("execute (threshold met) + withdrawal money path must finalize", executeSubmitted)
+        Log.i(TAG, "Proposal 1 executed by C — 2 NIGHT withdrawn to A")
+    }
+
+    /** Deploy a fresh 2-of-3 Vault: the wallet's own coin public key + two placeholders. */
+    private suspend fun deployVault(s: MidnightSdk): String =
+        deployVaultWith(s, listOf(s.coinPublicKey, ByteArray(32) { 0x11 }, ByteArray(32) { 0x22 }), threshold = 2)
+
+    /** Deploy a Vault with explicit [signerCoinPublicKeys] and [threshold], via [deployer]. */
+    private suspend fun deployVaultWith(
+        deployer: MidnightSdk,
+        signerCoinPublicKeys: List<ByteArray>,
+        threshold: Int,
+    ): String = VaultContract.deploy(
+        context = context,
+        sdk = deployer,
+        signerCoinPublicKeys = signerCoinPublicKeys,
+        threshold = threshold,
+    ) { stage -> Log.i(TAG, "deploy stage: $stage") }
+
+    /**
+     * Deposit [amount] base-unit NIGHT into the treasury at [address]. deploy() returns a
+     * node-finalized address but the indexer exposes the contract a beat later, so retry the
+     * cheap (pre-proving) state fetch until indexed. Returns true if the deposit reached submit.
+     */
+    private suspend fun deposit(s: MidnightSdk, address: String, amount: BigInteger): Boolean {
         var reachedSubmit = false
-        var lastError: Exception? = null
         val deadline = System.currentTimeMillis() + 90_000
         while (System.currentTimeMillis() < deadline) {
             try {
                 VaultContract.depositUnshielded(
-                    context = context,
-                    sdk = s,
-                    address = address,
-                    color = nativeColor,
-                    amount = amount,
+                    context = context, sdk = s, address = address,
+                    color = ByteArray(32), amount = amount,
                 ) { stage ->
                     Log.i(TAG, "deposit stage: $stage")
                     val name = stage.toString()
@@ -91,35 +174,11 @@ class VaultDeployE2ETest {
                 }
                 break
             } catch (e: ContractCallException.StateFetchFailed) {
-                lastError = e
                 Log.i(TAG, "contract not indexed yet; retrying deposit in 3s: ${e.message}")
                 delay(3_000)
             }
         }
-
-        Log.i(TAG, "Deposited $amount base-unit NIGHT into Vault treasury at $address")
-        // Reaching here means the deposit tx FINALIZED on-chain: receiveUnshielded claimed the
-        // wallet UTXO and the treasury balance insert ran (an invalid/unbalanced deposit would
-        // have thrown before this point — the SDK waits for finalization).
-        assertTrue(
-            "deposit must reach on-chain submission/finalization (last error: ${lastError?.message})",
-            reachedSubmit,
-        )
-    }
-
-    /** Deploy a fresh 2-of-3 Vault: the wallet's own coin public key + two placeholders. */
-    private suspend fun deployVault(s: MidnightSdk): String {
-        val signers = listOf(
-            s.coinPublicKey,
-            ByteArray(32) { 0x11 },
-            ByteArray(32) { 0x22 },
-        )
-        return VaultContract.deploy(
-            context = context,
-            sdk = s,
-            signerCoinPublicKeys = signers,
-            threshold = 2,
-        ) { stage -> Log.i(TAG, "deploy stage: $stage") }
+        return reachedSubmit
     }
 
     /**
@@ -135,6 +194,7 @@ class VaultDeployE2ETest {
             .seed(seed)
             .provingMode(ProvingMode.REMOTE)
             .build()
+        openSdks += s
         seed.fill(0)
         val address = s.walletAddress
 
@@ -173,6 +233,7 @@ class VaultDeployE2ETest {
         const val TAG = "VaultE2E"
         const val FUND_TAG = "KuiraE2EFund"
         const val FUND_MARKER = "KUIRA_FUND_REQ"
+        const val FIRST_PROPOSAL_ID = 1L
         val NIGHT_UNIT: BigInteger = BigInteger.valueOf(1_000_000L)
     }
 }
