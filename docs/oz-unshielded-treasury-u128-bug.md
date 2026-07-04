@@ -86,8 +86,30 @@ ContractCallException$CircuitExecutionFailed:
 
 ## Code Reproduction URL
 
-_(none yet — can provide a ~15-line minimal contract with a single
-`unshieldedBalanceLte(color, UINT128_MAX - x)` call; note it requires a real node to trigger.)_
+A **6-line self-contained repro** — no OZ modules, no third-party SDK — reproduces the underlying
+failure with Midnight's own `mn` CLI:
+
+```compact
+pragma language_version >= 0.23.0;
+import CompactStandardLibrary;
+
+export circuit checkOverflow(color: Bytes<32>): Boolean {
+  // 18446744073709551616 = 2^64 (one over u64::MAX), a valid Uint<128> literal.
+  return unshieldedBalanceLte(disclose(color), 18446744073709551616 as Uint<128>);
+}
+```
+
+```bash
+compact compile +0.31.1 src/repro.compact src/managed/repro
+mn airdrop 1000 --wallet alice && mn dust register --wallet alice   # wait for dust to mature
+ADDR=$(mn contract deploy --managed src/managed/repro --wallet alice --network undeployed | grep -oE '[0-9a-f]{64}' | head -1)
+mn contract call --managed src/managed/repro --wallet alice --network undeployed \
+  --circuit checkOverflow --address "$ADDR" --args '{"color":[1,1,…,1]}'   # FAILS
+```
+
+Deploy succeeds; the call fails with `failed to decode for built-in type u64 after successful
+typecheck` (`@midnight-ntwrk/compact-runtime` circuit-context) — verified end-to-end from a clean
+localnet. `UnshieldedTreasury._deposit`/`._send` hit the same builtin with `UINT128_MAX - amount`.
 
 ## Version
 
