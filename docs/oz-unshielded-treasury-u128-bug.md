@@ -57,6 +57,8 @@ module's own tracked `_balances` (`getTokenBalance`, `u128` in-circuit) instead 
 
 ## Code Reproduction URL
 
+https://github.com/nel349/unshielded-balance-u64-repro — `npm install && node sdk-repro.mjs`.
+
 A 6-line contract reproduces the underlying failure with `@midnight-ntwrk/compact-runtime`, no OZ
 modules:
 

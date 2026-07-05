@@ -21,6 +21,15 @@ The native ledger reports the same as `Execution(Decode(InvalidBuiltinDecode("u6
 
 ## Steps to reproduce
 
+Clone-and-run (no node, no wallet, no deploy):
+
+```bash
+git clone https://github.com/nel349/unshielded-balance-u64-repro
+cd unshielded-balance-u64-repro
+npm install
+node sdk-repro.mjs
+```
+
 A 6-line contract, run in-memory with `@midnight-ntwrk/compact-runtime`:
 
 ```compact
