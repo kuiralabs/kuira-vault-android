@@ -1,0 +1,13 @@
+{
+  "name": "unshielded-balance-u64-repro",
+  "version": "1.0.0",
+  "description": "Pure Midnight-SDK reproduction: unshieldedBalance* accepts Uint<128> but compares as u64",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "repro": "node sdk-repro.mjs"
+  },
+  "dependencies": {
+    "@midnight-ntwrk/compact-runtime": "0.16.0"
+  }
+}

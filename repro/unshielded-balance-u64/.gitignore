@@ -1,0 +1,6 @@
+node_modules/
+package-lock.json
+# Compiled output — only contract/ (the runtime JS) is committed so the repro runs without compactc.
+src/managed/repro/keys/
+src/managed/repro/zkir/
+src/managed/repro/compiler/
