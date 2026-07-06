@@ -4,14 +4,22 @@
 runtime comparison decodes the operand as `u64`. Any value above `u64::MAX` fails at circuit
 execution, even though protocol unshielded balances are themselves `u128`.
 
-## Reproduce
+## Run
 
-Compile the contract, then run the circuit in-memory with `@midnight-ntwrk/compact-runtime`:
+The compiled contract is committed, so no Compact toolchain is needed — just Node and npm:
+
+```bash
+npm install
+node sdk-repro.mjs
+```
+
+This runs the circuit in-memory with `@midnight-ntwrk/compact-runtime` and fails with the error
+under [Result](#result).
+
+To recompile the contract from source instead (needs `compactc` 0.31.x):
 
 ```bash
 compact compile +0.31.1 src/repro.compact src/managed/repro
-npm install
-node sdk-repro.mjs
 ```
 
 `src/repro.compact`:
