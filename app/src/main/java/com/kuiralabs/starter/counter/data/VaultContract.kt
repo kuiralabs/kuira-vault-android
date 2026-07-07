@@ -272,6 +272,10 @@ internal object VaultContract {
     suspend fun getProposalStatus(handle: MidnightContract, proposalId: Long): Int =
         jsonScalar(handle.read("getProposalStatus", BigInteger.valueOf(proposalId))).toInt()
 
+    /** Whether [coinPublicKey] is a registered signer of this Vault (can it approve?). */
+    suspend fun isSignerByKey(handle: MidnightContract, coinPublicKey: ByteArray): Boolean =
+        jsonScalar(handle.read("isSigner", signerStruct(coinPublicKey))).toBooleanStrict()
+
     suspend fun getProposal(handle: MidnightContract, proposalId: Long): OnChainProposal {
         val o = JSONObject(handle.read("getProposal", BigInteger.valueOf(proposalId)))
         val to = o.getJSONObject("to")
@@ -283,6 +287,31 @@ internal object VaultContract {
             status = o.getInt("status"),
         )
     }
+
+    /**
+     * Enumerate all proposals from chain. Proposal ids are contiguous from 1; getProposal throws
+     * "proposal not found" past the last one, which bounds the walk (capped at [max] for safety).
+     * Returns each id paired with its on-chain proposal + live approval count.
+     */
+    suspend fun listProposals(handle: MidnightContract, max: Int = 100): List<ProposalWithApprovals> {
+        val out = mutableListOf<ProposalWithApprovals>()
+        var id = 1L
+        while (id <= max) {
+            val proposal = try {
+                getProposal(handle, id)
+            } catch (_: Exception) {
+                break // past the last proposal
+            }
+            out += ProposalWithApprovals(id, proposal, getApprovalCount(handle, id))
+            id++
+        }
+        return out
+    }
+
+    data class ProposalWithApprovals(val id: Long, val proposal: OnChainProposal, val approvals: Int)
+
+    /** ProposalStatus.Executed ordinal (enum order: Active, Executed, Cancelled). */
+    const val PROPOSAL_STATUS_EXECUTED = 1
 
     /** Parse a JSON scalar (a quoted Uint decimal string, a number, or a boolean) to its text form. */
     private fun jsonScalar(json: String): String = org.json.JSONTokener(json).nextValue().toString()

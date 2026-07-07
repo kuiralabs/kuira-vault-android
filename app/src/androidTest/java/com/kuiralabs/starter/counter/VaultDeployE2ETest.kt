@@ -130,6 +130,16 @@ class VaultDeployE2ETest {
         assertEquals("read: proposal recipient", recipientHash.toHex(), onChain.recipientHashHex)
         val statusBeforeExecute = onChain.status
 
+        // read: the Connect flow's reads — enumerate proposals + check signer membership.
+        val listed = VaultContract.listProposals(reader)
+        assertEquals("read: exactly one proposal enumerated", 1, listed.size)
+        assertEquals("read: enumerated proposal id", FIRST_PROPOSAL_ID, listed[0].id)
+        assertTrue("read: signer A is a signer", VaultContract.isSignerByKey(reader, a.coinPublicKey))
+        assertTrue(
+            "read: a non-signer key is not a signer",
+            !VaultContract.isSignerByKey(reader, ByteArray(32) { 0xEE.toByte() }),
+        )
+
         // Two distinct signers approve → meets the threshold of 2.
         var approveA = false
         VaultContract.approve(context, a, address, proposalId = FIRST_PROPOSAL_ID) { stage ->
