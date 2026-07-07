@@ -16,7 +16,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -128,7 +127,14 @@ class VaultDeployE2ETest {
         val onChain = VaultContract.getProposal(reader, FIRST_PROPOSAL_ID)
         assertEquals("read: proposal amount", BigInteger.valueOf(2_000_000L), onChain.amountBase)
         assertEquals("read: proposal recipient", recipientHash.toHex(), onChain.recipientHashHex)
-        val statusBeforeExecute = onChain.status
+        // ABSOLUTE status assert — a relative before≠after check let a wrong enum mapping ship
+        // (ProposalStatus has a leading Inactive, so a fresh proposal is 1, not 0, and the UI
+        // stamped every fresh proposal "Executed").
+        assertEquals(
+            "read: a fresh proposal is ACTIVE",
+            VaultContract.PROPOSAL_STATUS_ACTIVE,
+            onChain.status,
+        )
 
         // read: the Connect flow's reads — enumerate proposals + check signer membership.
         val listed = VaultContract.listProposals(reader)
@@ -167,10 +173,10 @@ class VaultDeployE2ETest {
         ) { stage -> if (stage.toString().contains("Submitting")) executeSubmitted = true }
         assertTrue("execute (threshold met) + withdrawal money path must finalize", executeSubmitted)
 
-        // read: status changed (Active → Executed) and the treasury was debited.
-        assertNotEquals(
-            "read: proposal status changes after execute",
-            statusBeforeExecute,
+        // read: status is EXACTLY Executed (absolute, not just "changed") and the treasury debited.
+        assertEquals(
+            "read: proposal status is EXECUTED after execute",
+            VaultContract.PROPOSAL_STATUS_EXECUTED,
             VaultContract.getProposalStatus(reader, FIRST_PROPOSAL_ID),
         )
         assertEquals(

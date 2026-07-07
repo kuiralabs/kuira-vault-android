@@ -323,8 +323,14 @@ internal object VaultContract {
 
     data class ProposalWithApprovals(val id: Long, val proposal: OnChainProposal, val approvals: Int)
 
-    /** ProposalStatus.Executed ordinal (enum order: Active, Executed, Cancelled). */
-    const val PROPOSAL_STATUS_EXECUTED = 1
+    // ProposalStatus enum ordinals — the declaration ORDER in ProposalManager.compact is
+    // {Inactive, Active, Executed, Cancelled}. The leading Inactive is easy to miss (a
+    // case-sensitive search for "Active" doesn't match it), and mapping Executed to 1 stamped
+    // every FRESH proposal (Active == 1) as executed in the UI.
+    const val PROPOSAL_STATUS_INACTIVE = 0
+    const val PROPOSAL_STATUS_ACTIVE = 1
+    const val PROPOSAL_STATUS_EXECUTED = 2
+    const val PROPOSAL_STATUS_CANCELLED = 3
 
     /** Parse a JSON scalar (a quoted Uint decimal string, a number, or a boolean) to its text form. */
     private fun jsonScalar(json: String): String = org.json.JSONTokener(json).nextValue().toString()
