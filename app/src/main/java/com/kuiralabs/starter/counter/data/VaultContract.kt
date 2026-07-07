@@ -299,14 +299,27 @@ internal object VaultContract {
         while (id <= max) {
             val proposal = try {
                 getProposal(handle, id)
-            } catch (_: Exception) {
-                break // past the last proposal
+            } catch (e: Exception) {
+                // ONLY the contract's own not-found assert terminates the walk. Anything else
+                // (network/indexer failure mid-walk) must propagate — swallowing it silently
+                // truncated the list and rendered missing proposals as chain truth.
+                if (e.message?.contains(PROPOSAL_NOT_FOUND, ignoreCase = true) == true) break
+                throw e
             }
             out += ProposalWithApprovals(id, proposal, getApprovalCount(handle, id))
             id++
         }
         return out
     }
+
+    /** Whether [coinPublicKey] has already approved proposal [proposalId] (isApprovedBySigner). */
+    suspend fun isApprovedByKey(handle: MidnightContract, proposalId: Long, coinPublicKey: ByteArray): Boolean =
+        jsonScalar(
+            handle.read("isApprovedBySigner", BigInteger.valueOf(proposalId), signerStruct(coinPublicKey)),
+        ).toBooleanStrict()
+
+    /** The ProposalManager assert message that marks walking past the last proposal id. */
+    private const val PROPOSAL_NOT_FOUND = "proposal not found"
 
     data class ProposalWithApprovals(val id: Long, val proposal: OnChainProposal, val approvals: Int)
 

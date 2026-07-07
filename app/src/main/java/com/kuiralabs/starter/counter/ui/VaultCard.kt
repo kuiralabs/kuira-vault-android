@@ -28,12 +28,16 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.midnight.kuira.dapp.ContractCallProgressBar
+import com.midnight.kuira.sdk.NIGHT_DECIMALS
+import com.midnight.kuira.sdk.formatNight
 import java.math.BigInteger
 
-private val NIGHT_UNIT: BigInteger = BigInteger.valueOf(1_000_000L)
+// NIGHT amounts use the SDK's one source of scale + formatter: truncating integer division here
+// would render a 1_500_000-base treasury as "1 NIGHT" while the wallet pill shows "1.5".
 private fun nightToBase(whole: String): BigInteger? =
-    whole.trim().toBigIntegerOrNull()?.takeIf { it > BigInteger.ZERO }?.multiply(NIGHT_UNIT)
-private fun baseToNight(base: BigInteger): String = base.divide(NIGHT_UNIT).toString()
+    whole.trim().toBigIntegerOrNull()?.takeIf { it > BigInteger.ZERO }
+        ?.multiply(BigInteger.TEN.pow(NIGHT_DECIMALS))
+private fun baseToNight(base: BigInteger): String = formatNight(base)
 
 // The Vault (OZ multisig treasury) card. Branches on VaultUiState: deploy a 3-signer Vault,
 // deposit NIGHT into the treasury, propose a withdrawal, approve to threshold, execute.
@@ -267,7 +271,8 @@ private fun ProposalRow(
             style = MaterialTheme.typography.bodyMedium,
             maxLines = 1, overflow = TextOverflow.Ellipsis,
         )
-        // Status line + the ONE action that's the actual next step, so the flow is never ambiguous.
+        // Status line + the action(s) valid RIGHT NOW, driven by per-signer state — never guide a
+        // signer into the contract's "already approved" assert, never hide a legal approve.
         when {
             p.executed -> Text(
                 "✓ Executed — ${baseToNight(p.amount)} NIGHT sent to ${p.recipientLabel}",
@@ -279,16 +284,26 @@ private fun ProposalRow(
                     "${p.approvals}/${p.threshold} approved · ready to withdraw",
                     style = MaterialTheme.typography.bodySmall,
                 )
-                // Execute is permissionless once the threshold is met (any wallet can settle it).
-                Button(onClick = { onExecute(p.id) }, enabled = !busy) { Text("Execute withdrawal") }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // Execute is permissionless once the threshold is met.
+                    Button(onClick = { onExecute(p.id) }, enabled = !busy) { Text("Execute withdrawal") }
+                    // A signer who hasn't approved may still record a (contract-legal) approval.
+                    if (isSigner && !p.approvedByMe) {
+                        OutlinedButton(onClick = { onApprove(p.id) }, enabled = !busy) { Text("Approve") }
+                    }
+                }
             }
-            isSigner -> {
+            isSigner && !p.approvedByMe -> {
                 Text(
                     "${p.approvals}/${p.threshold} approved · needs ${p.threshold - p.approvals} more",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Button(onClick = { onApprove(p.id) }, enabled = !busy) { Text("Approve") }
             }
+            isSigner -> Text(
+                "${p.approvals}/${p.threshold} approved · you approved — waiting for other signers",
+                style = MaterialTheme.typography.bodySmall,
+            )
             else -> Text(
                 "${p.approvals}/${p.threshold} approved · waiting for signers",
                 style = MaterialTheme.typography.bodySmall,

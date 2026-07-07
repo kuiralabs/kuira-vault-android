@@ -34,12 +34,13 @@ sealed interface VaultUiState {
 data class ProposalView(
     val id: Long,
     val recipientLabel: String,
-    val recipientHashHex: String,
     val amount: BigInteger,
     val approvals: Int,
     val threshold: Int,
     val executed: Boolean,
+    // Whether THIS wallet already approved (from isApprovedBySigner) — gates the Approve
+    // affordance so a signer is never guided into the contract's duplicate-approval assert.
+    val approvedByMe: Boolean,
 ) {
     val thresholdMet: Boolean get() = approvals >= threshold
-    val settleable: Boolean get() = thresholdMet && !executed
 }

@@ -8,7 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
-import com.kuiralabs.starter.counter.ui.CounterScreen
+import com.kuiralabs.starter.counter.ui.VaultScreen
 import com.midnight.kuira.dapp.wallet.WalletAppShell
 import com.midnight.kuira.sdk.walletruntime.WalletNotifications
 import com.midnight.kuira.sdk.walletruntime.SessionLock
@@ -39,7 +39,7 @@ class MainActivity : AppCompatActivity() {
             WalletAppShell {
                 MaterialTheme {
                     Surface(modifier = Modifier.fillMaxSize()) {
-                        CounterScreen()
+                        VaultScreen()
                     }
                 }
             }

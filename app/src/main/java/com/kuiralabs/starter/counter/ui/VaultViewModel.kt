@@ -15,13 +15,14 @@ import com.midnight.kuira.sdk.MidnightSdk
 import com.midnight.kuira.sdk.walletruntime.MidnightSdkProvider
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.launch
 import java.math.BigInteger
 import javax.inject.Inject
@@ -76,14 +77,34 @@ class VaultViewModel @Inject constructor(
         }
     }
 
-    /** Deploy a 3-signer Vault requiring [threshold] approvals (this wallet + two co-signers). */
+    /**
+     * Deploy a 3-signer Vault requiring [threshold] approvals (this wallet + two co-signers).
+     * A BLANK co-signer entry becomes a placeholder (solo/demo mode); a non-blank entry that
+     * isn't valid 64-hex is REJECTED — silently substituting a placeholder would deploy a vault
+     * whose intended co-signer isn't a signer, and if real signers < threshold every deposit
+     * becomes permanently unspendable.
+     */
     fun deploy(threshold: Int, coSignerHexKeys: List<String>) {
         val sdk = sdkProvider.sdk.value ?: return
         val network = sdkProvider.selectedNetwork.value
         val coSigners = (0 until 2).map { i ->
             val entry = coSignerHexKeys.getOrNull(i)?.trim().orEmpty()
-            if (entry.length == 64 && entry.all { it in "0123456789abcdefABCDEF" }) hexToBytes(entry)
-            else ByteArray(32) { (0xC0 + i).toByte() } // distinct placeholder co-signer
+            when {
+                entry.isEmpty() -> ByteArray(32) { (0xC0 + i).toByte() } // blank = placeholder
+                entry.length == 64 && entry.all { it in "0123456789abcdefABCDEF" } -> hexToBytes(entry)
+                else -> {
+                    _error.value = "Co-signer ${i + 2} key must be exactly 64 hex characters " +
+                        "(got ${entry.length}) — fix it or leave the field blank."
+                    return
+                }
+            }
+        }
+        // Placeholders can't sign: the threshold is only reachable with that many REAL keys.
+        val realSigners = 1 + (0 until 2).count { !coSignerHexKeys.getOrNull(it).isNullOrBlank() }
+        if (threshold > realSigners) {
+            _error.value = "Threshold $threshold needs $threshold real signers but only $realSigners " +
+                "provided — add co-signer keys or lower the threshold (placeholders can't approve)."
+            return
         }
         val signers = listOf(sdk.coinPublicKey) + coSigners
         runAction {
@@ -118,8 +139,9 @@ class VaultViewModel @Inject constructor(
     }
 
     fun propose(recipient: String, amountBase: BigInteger) = withVault { sdk, _, address ->
-        val hashHex = recipientToHashHex(recipient) ?: run {
-            _error.value = "Invalid recipient — paste a wallet address or a 64-hex address hash"
+        val hashHex = recipientToHashHex(sdk, recipient) ?: run {
+            _error.value = "Recipient must be an unshielded wallet address on the current network " +
+                "(same prefix as your own address)."
             return@withVault
         }
         VaultContract.proposeWithdrawal(
@@ -128,11 +150,17 @@ class VaultViewModel @Inject constructor(
         ) { _callStage.value = it }
     }
 
-    /** A recipient is either a Bech32m wallet address (decode to its 32-byte hash) or the raw hash. */
-    private fun recipientToHashHex(input: String): String? {
-        val s = input.trim()
-        if (s.length == 64 && s.all { it in "0123456789abcdefABCDEF" }) return s.lowercase()
-        return runCatching { Bech32m.decode(s).second.toHex() }.getOrNull()?.takeIf { it.length == 64 }
+    /**
+     * Parse a withdrawal recipient: a Bech32m wallet address whose HRP matches THIS wallet's —
+     * same address type and same network. Raw hex is NOT accepted (a contract address or a shared
+     * signer key would pass a bare length check and the withdrawal would land on an unspendable
+     * hash), and a wrong-network address is rejected the same way the SDK's own send path does.
+     */
+    private fun recipientToHashHex(sdk: MidnightSdk, input: String): String? {
+        val myHrp = runCatching { Bech32m.decode(sdk.walletAddress).first }.getOrNull() ?: return null
+        val (hrp, payload) = runCatching { Bech32m.decode(input.trim()) }.getOrNull() ?: return null
+        if (hrp != myHrp || payload.size != 32) return null
+        return payload.toHex()
     }
 
     fun approve(id: Long) = withVault { sdk, _, address ->
@@ -190,6 +218,11 @@ class VaultViewModel @Inject constructor(
         while (true) {
             try {
                 return loadFromChain(sdk, address)
+            } catch (e: CancellationException) {
+                // A newer refresh cancelled this one — propagate so structured cancellation works
+                // (catching it as a generic Exception surfaced "Read failed: Job was cancelled"
+                // banners and let the cancelled coroutine keep writing stale state).
+                throw e
             } catch (e: ContractCallException.StateFetchFailed) {
                 if (System.currentTimeMillis() > deadline) {
                     _error.value = "Read failed: ${e.message}"
@@ -197,6 +230,7 @@ class VaultViewModel @Inject constructor(
                 }
                 delay(2_000) // contract not indexed yet
             } catch (e: Exception) {
+                Log.e(TAG, "Vault chain read failed", e)
                 _error.value = "Read failed: ${e.message}"
                 return null
             }
@@ -208,16 +242,22 @@ class VaultViewModel @Inject constructor(
         val threshold = VaultContract.getThreshold(handle)
         val signerCount = VaultContract.getSignerCount(handle)
         val balance = VaultContract.getUnshieldedBalance(handle, NATIVE_COLOR)
-        val isSigner = runCatching { VaultContract.isSignerByKey(handle, sdk.coinPublicKey) }.getOrDefault(false)
+        // Let a failure PROPAGATE (retry/error path) rather than default to false — a transient
+        // read failure must not silently demote a real signer to a view-only UI.
+        val isSigner = VaultContract.isSignerByKey(handle, sdk.coinPublicKey)
         val proposals = VaultContract.listProposals(handle).map { p ->
+            val executed = p.proposal.status == VaultContract.PROPOSAL_STATUS_EXECUTED
             ProposalView(
                 id = p.id,
                 recipientLabel = "…${p.proposal.recipientHashHex.takeLast(8)}",
-                recipientHashHex = p.proposal.recipientHashHex,
                 amount = p.proposal.amountBase,
                 approvals = p.approvals,
                 threshold = threshold,
-                executed = p.proposal.status == VaultContract.PROPOSAL_STATUS_EXECUTED,
+                executed = executed,
+                // Per-signer state so the UI never guides a signer into the contract's
+                // "already approved" assert (only read where it matters: open proposals).
+                approvedByMe = isSigner && !executed &&
+                    VaultContract.isApprovedByKey(handle, p.id, sdk.coinPublicKey),
             )
         }.sortedByDescending { it.id }
         return VaultUiState.Deployed(
@@ -236,7 +276,14 @@ class VaultViewModel @Inject constructor(
         approvalStreamJob?.cancel()
         approvalStreamJob = viewModelScope.launch {
             VaultContract.observeApprovalCounts(readHandleFor(sdk, address))
-                .catch { /* non-fatal background read */ }
+                // The SDK survives most stream failures internally, but a terminal error (e.g. a
+                // decode throw) would otherwise END the flow silently and live X/N updates die for
+                // the session — restart after a beat instead. Cancellation still cancels normally.
+                .retryWhen { e, _ ->
+                    Log.w(TAG, "approval stream error — restarting in 5s", e)
+                    delay(5_000)
+                    true
+                }
                 .collect { refresh(sdk, address, sdkProvider.selectedNetwork.value) }
         }
     }
