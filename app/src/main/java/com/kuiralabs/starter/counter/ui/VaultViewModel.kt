@@ -102,11 +102,13 @@ class VaultViewModel @Inject constructor(
             return
         }
         runAction {
-            // Prove it's a readable Vault before saving (a bad address would leave a broken state).
-            val handle = VaultContract.buildReadHandle(context, sdk, address)
-            val threshold = VaultContract.getThreshold(handle)
-            vaultStore.save(network, address, threshold)
-            onSdkOrNetworkChanged(sdk, network)
+            // Load with the indexer-lag retry (also handles connecting to a just-deployed Vault);
+            // only save once it reads as a real Vault, so a bad address doesn't leave a broken state.
+            val loaded = loadWithIndexerRetry(sdk, address) ?: return@runAction // error set by the retry
+            vaultStore.save(network, address, loaded.threshold)
+            _state.value = loaded
+            _error.value = null
+            startApprovalStream(sdk, address)
         }
     }
 
