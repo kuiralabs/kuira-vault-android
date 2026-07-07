@@ -236,6 +236,11 @@ private fun DeployedBody(
     if (state.proposals.isNotEmpty()) {
         HorizontalDivider()
         Text("Proposals", style = MaterialTheme.typography.labelLarge)
+        Text(
+            "A withdrawal needs ${state.threshold} approval(s), then Execute. As a signer you must " +
+                "approve a proposal (including your own) before it can execute.",
+            style = MaterialTheme.typography.bodySmall,
+        )
         state.proposals.forEach { p -> ProposalRow(p, busy, state.isSigner, onApprove, onExecute) }
     }
 
@@ -252,23 +257,42 @@ private fun DeployedBody(
 private fun ProposalRow(
     p: ProposalView,
     busy: Boolean,
-    canApprove: Boolean,
+    isSigner: Boolean,
     onApprove: (Long) -> Unit,
     onExecute: (Long) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Text(
-            "#${p.id} → ${p.recipientLabel} · ${baseToNight(p.amount)} NIGHT" +
-                (if (p.executed) " · executed" else " · ${p.approvals}/${p.threshold} approved"),
+            "#${p.id} → ${p.recipientLabel} · ${baseToNight(p.amount)} NIGHT",
             style = MaterialTheme.typography.bodyMedium,
             maxLines = 1, overflow = TextOverflow.Ellipsis,
         )
-        if (!p.executed) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // Approve only if this wallet is a signer; execute is permissionless once threshold met.
-                OutlinedButton(onClick = { onApprove(p.id) }, enabled = !busy && canApprove) { Text("Approve") }
-                Button(onClick = { onExecute(p.id) }, enabled = !busy && p.settleable) { Text("Execute") }
+        // Status line + the ONE action that's the actual next step, so the flow is never ambiguous.
+        when {
+            p.executed -> Text(
+                "✓ Executed — ${baseToNight(p.amount)} NIGHT sent to ${p.recipientLabel}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.tertiary,
+            )
+            p.thresholdMet -> {
+                Text(
+                    "${p.approvals}/${p.threshold} approved · ready to withdraw",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                // Execute is permissionless once the threshold is met (any wallet can settle it).
+                Button(onClick = { onExecute(p.id) }, enabled = !busy) { Text("Execute withdrawal") }
             }
+            isSigner -> {
+                Text(
+                    "${p.approvals}/${p.threshold} approved · needs ${p.threshold - p.approvals} more",
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Button(onClick = { onApprove(p.id) }, enabled = !busy) { Text("Approve") }
+            }
+            else -> Text(
+                "${p.approvals}/${p.threshold} approved · waiting for signers",
+                style = MaterialTheme.typography.bodySmall,
+            )
         }
     }
 }
