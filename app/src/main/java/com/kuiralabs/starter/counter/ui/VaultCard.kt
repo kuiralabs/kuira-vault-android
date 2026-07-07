@@ -266,22 +266,41 @@ private fun ProposalRow(
     onExecute: (Long) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        // Title + a status chip that names the stage in plain words.
+        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Text(
+                "Withdrawal #${p.id}",
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.weight(1f),
+            )
+            val (chip, chipColor) = when {
+                p.executed -> "✓ Completed" to MaterialTheme.colorScheme.tertiary
+                p.thresholdMet -> "Ready to execute" to MaterialTheme.colorScheme.primary
+                else -> "Awaiting approvals" to MaterialTheme.colorScheme.onSurfaceVariant
+            }
+            Text(chip, style = MaterialTheme.typography.labelMedium, color = chipColor)
+        }
+
+        // What moves where — the recipient as a real wallet address, flagged when it's this wallet.
         Text(
-            "#${p.id} → ${p.recipientLabel} · ${baseToNight(p.amount)} NIGHT",
+            "${baseToNight(p.amount)} NIGHT → ${shortAddress(p.recipientAddress)}" +
+                if (p.recipientIsMe) "  (your wallet)" else "",
             style = MaterialTheme.typography.bodyMedium,
             maxLines = 1, overflow = TextOverflow.Ellipsis,
         )
-        // Status line + the action(s) valid RIGHT NOW, driven by per-signer state — never guide a
-        // signer into the contract's "already approved" assert, never hide a legal approve.
+
+        // Approvals stated absolutely ("2 approvals · 1 required" — never a 2/1 ratio) + the one
+        // action valid right now, driven by per-signer state.
+        val approvalsText = "${p.approvals} approval(s) · ${p.threshold} required"
         when {
             p.executed -> Text(
-                "✓ Executed — ${baseToNight(p.amount)} NIGHT sent to ${p.recipientLabel}",
+                "Sent to ${shortAddress(p.recipientAddress)}${if (p.recipientIsMe) " (your wallet)" else ""}",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.tertiary,
             )
             p.thresholdMet -> {
                 Text(
-                    "${p.approvals}/${p.threshold} approved · ready to withdraw",
+                    "$approvalsText — anyone may settle it now",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -295,19 +314,23 @@ private fun ProposalRow(
             }
             isSigner && !p.approvedByMe -> {
                 Text(
-                    "${p.approvals}/${p.threshold} approved · needs ${p.threshold - p.approvals} more",
+                    "$approvalsText — your approval is needed",
                     style = MaterialTheme.typography.bodySmall,
                 )
                 Button(onClick = { onApprove(p.id) }, enabled = !busy) { Text("Approve") }
             }
             isSigner -> Text(
-                "${p.approvals}/${p.threshold} approved · you approved — waiting for other signers",
+                "$approvalsText — you approved · waiting for co-signers",
                 style = MaterialTheme.typography.bodySmall,
             )
             else -> Text(
-                "${p.approvals}/${p.threshold} approved · waiting for signers",
+                "$approvalsText — waiting for signers",
                 style = MaterialTheme.typography.bodySmall,
             )
         }
     }
 }
+
+/** Head…tail truncation for a Bech32m address — keeps the HRP visible and the tail comparable. */
+private fun shortAddress(address: String): String =
+    if (address.length <= 26) address else "${address.take(18)}…${address.takeLast(6)}"

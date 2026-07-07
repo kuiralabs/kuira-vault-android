@@ -40,7 +40,8 @@ fun VaultScreen(
                 .padding(top = 56.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            Text("Kuira Vault — Multisig Treasury", style = MaterialTheme.typography.headlineMedium)
+            // One short line — the long two-line headline scrolled under the floating pills.
+            Text("Kuira Vault", style = MaterialTheme.typography.headlineMedium)
             VaultCard()
         }
 

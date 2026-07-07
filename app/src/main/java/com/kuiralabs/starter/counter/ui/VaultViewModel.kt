@@ -245,11 +245,16 @@ class VaultViewModel @Inject constructor(
         // Let a failure PROPAGATE (retry/error path) rather than default to false — a transient
         // read failure must not silently demote a real signer to a view-only UI.
         val isSigner = VaultContract.isSignerByKey(handle, sdk.coinPublicKey)
+        // Recipients display as real wallet addresses (re-encoded from the on-chain hash with
+        // this wallet's HRP — same network by construction), marked when they're this wallet.
+        val myHrp = Bech32m.decode(sdk.walletAddress).first
+        val myHashHex = Bech32m.decode(sdk.walletAddress).second.toHex()
         val proposals = VaultContract.listProposals(handle).map { p ->
             val executed = p.proposal.status == VaultContract.PROPOSAL_STATUS_EXECUTED
             ProposalView(
                 id = p.id,
-                recipientLabel = "…${p.proposal.recipientHashHex.takeLast(8)}",
+                recipientAddress = Bech32m.encode(myHrp, hexToBytes(p.proposal.recipientHashHex)),
+                recipientIsMe = p.proposal.recipientHashHex.equals(myHashHex, ignoreCase = true),
                 amount = p.proposal.amountBase,
                 approvals = p.approvals,
                 threshold = threshold,

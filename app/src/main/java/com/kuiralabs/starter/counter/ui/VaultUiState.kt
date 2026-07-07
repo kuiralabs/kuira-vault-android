@@ -33,7 +33,10 @@ sealed interface VaultUiState {
 /** A withdrawal proposal as shown in the UI. */
 data class ProposalView(
     val id: Long,
-    val recipientLabel: String,
+    // The recipient re-encoded as a real Bech32m wallet address (not a raw hash tail), plus
+    // whether it is THIS wallet — "1 NIGHT → mn_addr…xyz (your wallet)" reads; a hex tail doesn't.
+    val recipientAddress: String,
+    val recipientIsMe: Boolean,
     val amount: BigInteger,
     val approvals: Int,
     val threshold: Int,
