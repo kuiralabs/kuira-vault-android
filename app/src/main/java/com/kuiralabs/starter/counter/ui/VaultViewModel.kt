@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kuiralabs.starter.counter.data.VaultContract
 import com.kuiralabs.starter.counter.data.VaultStore
+import com.midnight.kuira.core.compact.ContractCallException
 import com.midnight.kuira.core.compact.ContractCallStage
 import com.midnight.kuira.core.compact.MidnightContract
 import com.midnight.kuira.core.crypto.address.Bech32m
@@ -17,6 +18,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
@@ -164,12 +166,37 @@ class VaultViewModel @Inject constructor(
         refreshJob = viewModelScope.launch {
             val prev = _state.value as? VaultUiState.Deployed
             if (prev != null) _state.value = prev.copy(refreshing = true)
-            val loaded = runCatching { loadFromChain(sdk, address) }.getOrElse {
-                _error.value = "Read failed: ${it.message}"
-                null
+            val loaded = loadWithIndexerRetry(sdk, address)
+            if (loaded != null) {
+                _state.value = loaded
+                _error.value = null // a successful read clears any stale transient error
+            } else if (prev != null) {
+                _state.value = prev.copy(refreshing = false)
             }
-            if (loaded != null) _state.value = loaded
-            else if (prev != null) _state.value = prev.copy(refreshing = false)
+        }
+    }
+
+    // A freshly-deployed (or just-connected) contract isn't in the indexer for a beat, so the first
+    // read throws "Contract not found". Retry until it lands rather than surfacing a transient error.
+    private suspend fun loadWithIndexerRetry(
+        sdk: MidnightSdk,
+        address: String,
+        timeoutMs: Long = 60_000L,
+    ): VaultUiState.Deployed? {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (true) {
+            try {
+                return loadFromChain(sdk, address)
+            } catch (e: ContractCallException.StateFetchFailed) {
+                if (System.currentTimeMillis() > deadline) {
+                    _error.value = "Read failed: ${e.message}"
+                    return null
+                }
+                delay(2_000) // contract not indexed yet
+            } catch (e: Exception) {
+                _error.value = "Read failed: ${e.message}"
+                return null
+            }
         }
     }
 
