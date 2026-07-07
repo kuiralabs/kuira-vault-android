@@ -15,6 +15,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -95,8 +97,20 @@ class VaultDeployE2ETest {
         )
         Log.i(TAG, "2-of-3 Vault deployed at $address")
 
-        // Fund the treasury so there is something to withdraw.
+        // Fund the treasury so there is something to withdraw. deposit() retries the state fetch
+        // until the indexer exposes the freshly-deployed contract, so reads after it are safe.
         assertTrue("deposit must finalize", deposit(a, address, BigInteger.valueOf(5_000_000L)))
+
+        // A read-only handle any device could build from just the address (no signing key). Its
+        // reads verify the view-call read path against on-chain truth at every stage.
+        val reader = VaultContract.buildReadHandle(context, a, address)
+        assertEquals("read: threshold", 2, VaultContract.getThreshold(reader))
+        assertEquals("read: signer count", 3, VaultContract.getSignerCount(reader))
+        assertEquals(
+            "read: treasury balance reflects the deposit",
+            BigInteger.valueOf(5_000_000L),
+            VaultContract.getUnshieldedBalance(reader, ByteArray(32)),
+        )
 
         // Signer A proposes a withdrawal (first proposal on a fresh Vault has id 1).
         val recipientHash = Bech32m.decode(a.walletAddress).second
@@ -110,6 +124,12 @@ class VaultDeployE2ETest {
         assertTrue("proposeWithdrawal (signer-gated) must finalize", proposeSubmitted)
         Log.i(TAG, "Proposal 1 created by signer A")
 
+        // read: the proposal's recipient + amount match what A proposed (chain truth, not local).
+        val onChain = VaultContract.getProposal(reader, FIRST_PROPOSAL_ID)
+        assertEquals("read: proposal amount", BigInteger.valueOf(2_000_000L), onChain.amountBase)
+        assertEquals("read: proposal recipient", recipientHash.toHex(), onChain.recipientHashHex)
+        val statusBeforeExecute = onChain.status
+
         // Two distinct signers approve → meets the threshold of 2.
         var approveA = false
         VaultContract.approve(context, a, address, proposalId = FIRST_PROPOSAL_ID) { stage ->
@@ -121,6 +141,7 @@ class VaultDeployE2ETest {
         }
         assertTrue("signer A approval must finalize", approveA)
         assertTrue("signer B approval must finalize (distinct signer, threshold met)", approveB)
+        assertEquals("read: approval count == 2", 2, VaultContract.getApprovalCount(reader, FIRST_PROPOSAL_ID))
         Log.i(TAG, "Proposal 1 approved by signers A + B (2/2 threshold)")
 
         // Permissionless execute (wallet C — not a required approver): the threshold is the
@@ -135,7 +156,19 @@ class VaultDeployE2ETest {
             amount = BigInteger.valueOf(2_000_000L),
         ) { stage -> if (stage.toString().contains("Submitting")) executeSubmitted = true }
         assertTrue("execute (threshold met) + withdrawal money path must finalize", executeSubmitted)
-        Log.i(TAG, "Proposal 1 executed by C — 2 NIGHT withdrawn to A")
+
+        // read: status changed (Active → Executed) and the treasury was debited.
+        assertNotEquals(
+            "read: proposal status changes after execute",
+            statusBeforeExecute,
+            VaultContract.getProposalStatus(reader, FIRST_PROPOSAL_ID),
+        )
+        assertEquals(
+            "read: treasury debited by the withdrawal",
+            BigInteger.valueOf(3_000_000L),
+            VaultContract.getUnshieldedBalance(reader, ByteArray(32)),
+        )
+        Log.i(TAG, "Proposal 1 executed by C — 2 NIGHT withdrawn to A; reads reflect chain truth")
     }
 
     /** Deploy a fresh 2-of-3 Vault: the wallet's own coin public key + two placeholders. */
@@ -228,6 +261,8 @@ class VaultDeployE2ETest {
         }
         return s
     }
+
+    private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
 
     private companion object {
         const val TAG = "VaultE2E"

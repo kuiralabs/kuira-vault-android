@@ -6,6 +6,9 @@ import com.midnight.kuira.core.compact.ContractCallStage
 import com.midnight.kuira.core.compact.MidnightContract
 import com.midnight.kuira.core.compact.proving.ProvingKeyManager
 import com.midnight.kuira.sdk.MidnightSdk
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
+import org.json.JSONObject
 import java.math.BigInteger
 
 // Thin wrapper around MidnightContract for the Vault — the unshielded multisig
@@ -205,7 +208,97 @@ internal object VaultContract {
         )
     }
 
+    /**
+     * Read-only handle for observing the Vault's ledger state and calling view circuits (no signing
+     * keys needed). Includes the constructor args: a view-call read runs initialState() (then swaps
+     * in the on-chain state), so a constructor-args contract needs shape-valid args to pass its
+     * validation — even for a read.
+     */
+    fun buildReadHandle(context: Context, sdk: MidnightSdk, address: String): MidnightContract =
+        buildHandle(context, sdk, address = address, forWrite = false, constructorArgs = callConstructorArgs())
+
+    /**
+     * Live per-proposal approval count from the contract's `_approvalCount` ledger map. This is
+     * the one governance value read from chain (it changes when OTHER signer wallets approve);
+     * proposal details + treasury balance are tracked app-side. Emits on each on-chain change.
+     */
+    fun observeApprovalCounts(handle: MidnightContract): Flow<Map<Long, Int>> =
+        handle.observeLedger().map { ledger -> decodeApprovalCounts(ledger.getRawOrNull(LEDGER_APPROVAL_COUNT)) }
+
+    private fun decodeApprovalCounts(raw: Any?): Map<Long, Int> {
+        val map = raw as? Map<*, *> ?: return emptyMap()
+        return map.entries.mapNotNull { (k, v) ->
+            val id = asLong(k) ?: return@mapNotNull null
+            val count = asLong(v)?.toInt() ?: return@mapNotNull null
+            id to count
+        }.toMap()
+    }
+
+    private fun asLong(x: Any?): Long? = when (x) {
+        is Long -> x
+        is Int -> x.toLong()
+        is BigInteger -> x.toLong()
+        is String -> x.toLongOrNull()
+        else -> null
+    }
+
+    // ── On-chain reads (view-call read path) ──
+    // These read the composed OZ module state (treasury balance, proposal details, threshold)
+    // that isn't exposed as a raw ledger field — so ANY device (not just the deployer) sees
+    // chain truth. read() returns JSON: a scalar Uint arrives as a quoted decimal string, Bytes
+    // as hex, a struct as a JSON object.
+
+    /** A proposal as stored on-chain (recipient kind/address, token, amount, status). */
+    data class OnChainProposal(
+        val recipientKind: Int,
+        val recipientHashHex: String,
+        val colorHex: String,
+        val amountBase: BigInteger,
+        val status: Int,
+    )
+
+    suspend fun getThreshold(handle: MidnightContract): Int =
+        jsonScalar(handle.read("getThreshold")).toInt()
+
+    suspend fun getSignerCount(handle: MidnightContract): Int =
+        jsonScalar(handle.read("getSignerCount")).toInt()
+
+    suspend fun getUnshieldedBalance(handle: MidnightContract, color: ByteArray): BigInteger =
+        BigInteger(jsonScalar(handle.read("getUnshieldedBalance", color)))
+
+    suspend fun getApprovalCount(handle: MidnightContract, proposalId: Long): Int =
+        jsonScalar(handle.read("getApprovalCount", BigInteger.valueOf(proposalId))).toInt()
+
+    suspend fun getProposalStatus(handle: MidnightContract, proposalId: Long): Int =
+        jsonScalar(handle.read("getProposalStatus", BigInteger.valueOf(proposalId))).toInt()
+
+    suspend fun getProposal(handle: MidnightContract, proposalId: Long): OnChainProposal {
+        val o = JSONObject(handle.read("getProposal", BigInteger.valueOf(proposalId)))
+        val to = o.getJSONObject("to")
+        return OnChainProposal(
+            recipientKind = to.getInt("kind"),
+            recipientHashHex = bytesHex(to, "address"),
+            colorHex = bytesHex(o, "color"),
+            amountBase = BigInteger(o.getString("amount")),
+            status = o.getInt("status"),
+        )
+    }
+
+    /** Parse a JSON scalar (a quoted Uint decimal string, a number, or a boolean) to its text form. */
+    private fun jsonScalar(json: String): String = org.json.JSONTokener(json).nextValue().toString()
+
+    /**
+     * Decode a Compact Bytes field to hex. read() emits a top-level Bytes as a hex string, but a
+     * Bytes nested in a struct arrives as a JSON array of byte values — accept both.
+     */
+    private fun bytesHex(o: JSONObject, key: String): String = when (val v = o.get(key)) {
+        is String -> v
+        is org.json.JSONArray -> (0 until v.length()).joinToString("") { "%02x".format(v.getInt(it) and 0xFF) }
+        else -> v.toString()
+    }
+
     private const val RECIPIENT_KIND_UNSHIELDED_USER = 1
+    private const val LEDGER_APPROVAL_COUNT = "_approvalCount"
 
     private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
 }
