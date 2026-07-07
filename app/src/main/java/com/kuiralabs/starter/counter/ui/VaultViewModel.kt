@@ -1,6 +1,7 @@
 package com.kuiralabs.starter.counter.ui
 
 import android.content.Context
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kuiralabs.starter.counter.data.VaultContract
@@ -207,7 +208,7 @@ class VaultViewModel @Inject constructor(
         val threshold = VaultContract.getThreshold(handle)
         val signerCount = VaultContract.getSignerCount(handle)
         val balance = VaultContract.getUnshieldedBalance(handle, NATIVE_COLOR)
-        val canApprove = runCatching { VaultContract.isSignerByKey(handle, sdk.coinPublicKey) }.getOrDefault(false)
+        val isSigner = runCatching { VaultContract.isSignerByKey(handle, sdk.coinPublicKey) }.getOrDefault(false)
         val proposals = VaultContract.listProposals(handle).map { p ->
             ProposalView(
                 id = p.id,
@@ -225,7 +226,7 @@ class VaultViewModel @Inject constructor(
             signerCount = signerCount,
             treasuryBalance = balance,
             proposals = proposals,
-            canApprove = canApprove,
+            isSigner = isSigner,
         )
     }
 
@@ -273,6 +274,7 @@ class VaultViewModel @Inject constructor(
             try {
                 block()
             } catch (t: Throwable) {
+                Log.e(TAG, "Vault action failed", t)
                 _error.value = t.message ?: t::class.simpleName ?: "Unknown error"
             } finally {
                 _busy.value = false
@@ -286,6 +288,7 @@ class VaultViewModel @Inject constructor(
         ByteArray(hex.length / 2) { hex.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
 
     private companion object {
+        const val TAG = "VaultViewModel"
         val NATIVE_COLOR = ByteArray(32) // 32 zero bytes = native NIGHT
     }
 }

@@ -22,8 +22,9 @@ sealed interface VaultUiState {
         val signerCount: Int,
         val treasuryBalance: BigInteger,
         val proposals: List<ProposalView>,
-        // Whether THIS wallet is a signer (from isSigner) — if false, it can view but not approve.
-        val canApprove: Boolean,
+        // Whether THIS wallet is a signer. Non-signers can only deposit (permissionless); propose
+        // AND approve are both signer-gated (Signer_assertSigner in the contract).
+        val isSigner: Boolean,
         // A chain refresh is in flight (balance/proposals being re-read).
         val refreshing: Boolean = false,
     ) : VaultUiState

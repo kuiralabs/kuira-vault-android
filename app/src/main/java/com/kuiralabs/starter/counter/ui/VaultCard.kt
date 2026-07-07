@@ -188,9 +188,9 @@ private fun DeployedBody(
         style = MaterialTheme.typography.bodySmall,
     )
     Text("Treasury: ${baseToNight(state.treasuryBalance)} NIGHT", style = MaterialTheme.typography.headlineSmall)
-    if (!state.canApprove) {
+    if (!state.isSigner) {
         Text(
-            "You are not a signer of this Vault — view only (you can deposit + propose, but not approve).",
+            "You are not a signer of this Vault — you can deposit, but only signers can propose or approve.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.tertiary,
         )
@@ -227,7 +227,8 @@ private fun DeployedBody(
         )
         Button(
             onClick = { nightToBase(proposeAmt)?.let { onPropose(recipient.trim(), it); proposeAmt = "" } },
-            enabled = !busy && nightToBase(proposeAmt) != null && recipient.isNotBlank(),
+            // proposeWithdrawal is signer-gated, so only a signer can propose.
+            enabled = !busy && state.isSigner && nightToBase(proposeAmt) != null && recipient.isNotBlank(),
         ) { Text("Propose") }
     }
 
@@ -235,7 +236,7 @@ private fun DeployedBody(
     if (state.proposals.isNotEmpty()) {
         HorizontalDivider()
         Text("Proposals", style = MaterialTheme.typography.labelLarge)
-        state.proposals.forEach { p -> ProposalRow(p, busy, state.canApprove, onApprove, onExecute) }
+        state.proposals.forEach { p -> ProposalRow(p, busy, state.isSigner, onApprove, onExecute) }
     }
 
     HorizontalDivider()
