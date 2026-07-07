@@ -112,11 +112,22 @@ class VaultViewModel @Inject constructor(
         VaultContract.depositUnshielded(context, sdk, address, NATIVE_COLOR, amountBase) { _callStage.value = it }
     }
 
-    fun propose(recipientHashHex: String, amountBase: BigInteger) = withVault { sdk, _, address ->
+    fun propose(recipient: String, amountBase: BigInteger) = withVault { sdk, _, address ->
+        val hashHex = recipientToHashHex(recipient) ?: run {
+            _error.value = "Invalid recipient — paste a wallet address or a 64-hex address hash"
+            return@withVault
+        }
         VaultContract.proposeWithdrawal(
             context, sdk, address,
-            recipientAddressHash = hexToBytes(recipientHashHex), color = NATIVE_COLOR, amount = amountBase,
+            recipientAddressHash = hexToBytes(hashHex), color = NATIVE_COLOR, amount = amountBase,
         ) { _callStage.value = it }
+    }
+
+    /** A recipient is either a Bech32m wallet address (decode to its 32-byte hash) or the raw hash. */
+    private fun recipientToHashHex(input: String): String? {
+        val s = input.trim()
+        if (s.length == 64 && s.all { it in "0123456789abcdefABCDEF" }) return s.lowercase()
+        return runCatching { Bech32m.decode(s).second.toHex() }.getOrNull()?.takeIf { it.length == 64 }
     }
 
     fun approve(id: Long) = withVault { sdk, _, address ->
@@ -140,11 +151,8 @@ class VaultViewModel @Inject constructor(
         onSdkOrNetworkChanged(sdkProvider.sdk.value, network)
     }
 
-    /** This wallet's own unshielded address hash — a convenient default withdrawal recipient. */
-    fun myRecipientHashHex(): String? {
-        val sdk = sdkProvider.sdk.value ?: return null
-        return Bech32m.decode(sdk.walletAddress).second.toHex()
-    }
+    /** This wallet's own Bech32m address — a convenient default withdrawal recipient. */
+    fun myAddress(): String? = sdkProvider.sdk.value?.walletAddress
 
     /** This wallet's signer public key, hex — share it so a deployer can add it as a co-signer. */
     fun mySignerKeyHex(): String? = sdkProvider.sdk.value?.coinPublicKey?.toHex()

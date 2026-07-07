@@ -22,6 +22,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -63,7 +65,7 @@ fun VaultCard(
                 is VaultUiState.Deployed -> DeployedBody(
                     state = s,
                     busy = busy,
-                    defaultRecipientHex = viewModel.myRecipientHashHex(),
+                    defaultRecipient = viewModel.myAddress(),
                     onDeposit = viewModel::deposit,
                     onPropose = viewModel::propose,
                     onApprove = viewModel::approve,
@@ -138,11 +140,18 @@ private fun DeployBody(
     }
 
     if (mySignerKeyHex != null) {
+        val clipboard = LocalClipboardManager.current
         Text(
             "Your signer key (share so a deployer can add you as a co-signer):",
             style = MaterialTheme.typography.labelSmall,
         )
-        Text(mySignerKeyHex, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Text(
+                mySignerKeyHex, style = MaterialTheme.typography.bodySmall,
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = { clipboard.setText(AnnotatedString(mySignerKeyHex)) }) { Text("Copy") }
+        }
     }
 
     HorizontalDivider()
@@ -165,7 +174,7 @@ private fun DeployBody(
 private fun DeployedBody(
     state: VaultUiState.Deployed,
     busy: Boolean,
-    defaultRecipientHex: String?,
+    defaultRecipient: String?,
     onDeposit: (BigInteger) -> Unit,
     onPropose: (String, BigInteger) -> Unit,
     onApprove: (Long) -> Unit,
@@ -204,11 +213,11 @@ private fun DeployedBody(
 
     // ── New proposal ──
     Text("New withdrawal proposal", style = MaterialTheme.typography.labelLarge)
-    var recipient by remember(defaultRecipientHex) { mutableStateOf(defaultRecipientHex.orEmpty()) }
+    var recipient by remember(defaultRecipient) { mutableStateOf(defaultRecipient.orEmpty()) }
     var proposeAmt by remember { mutableStateOf("") }
     OutlinedTextField(
         value = recipient, onValueChange = { recipient = it },
-        label = { Text("Recipient address hash (64 hex)") }, singleLine = true, enabled = !busy,
+        label = { Text("Recipient wallet address") }, singleLine = true, enabled = !busy,
         modifier = Modifier.fillMaxWidth(),
     )
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
@@ -218,7 +227,7 @@ private fun DeployedBody(
         )
         Button(
             onClick = { nightToBase(proposeAmt)?.let { onPropose(recipient.trim(), it); proposeAmt = "" } },
-            enabled = !busy && nightToBase(proposeAmt) != null && recipient.trim().length == 64,
+            enabled = !busy && nightToBase(proposeAmt) != null && recipient.isNotBlank(),
         ) { Text("Propose") }
     }
 
@@ -230,8 +239,12 @@ private fun DeployedBody(
     }
 
     HorizontalDivider()
-    TextButton(onClick = onDisconnect, enabled = !busy) { Text("Disconnect") }
-    Text("Approvals update live from chain.", style = MaterialTheme.typography.bodySmall)
+    val clipboard = LocalClipboardManager.current
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        TextButton(onClick = { clipboard.setText(AnnotatedString(state.address)) }) { Text("Copy vault address") }
+        TextButton(onClick = onDisconnect, enabled = !busy) { Text("Disconnect") }
+    }
+    Text("Balance + proposals read live from chain. Share the address so co-signers can Connect.", style = MaterialTheme.typography.bodySmall)
 }
 
 @Composable
