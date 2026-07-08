@@ -1,293 +1,169 @@
 # Kuira Vault — Android
 
-A multisig confidential treasury on Midnight, as an Android dApp. Sigil
-identity + embedded wallet + an OpenZeppelin-composed **M-of-N Vault**
-contract: deposit NIGHT into a shared treasury, propose a withdrawal,
-collect approvals from distinct signer wallets, execute — with every
-balance, proposal, and approval read live from chain, so a co-signer
-device that connects to an existing Vault sees the same truth as the
-deployer.
+A working **M-of-N multisig treasury** on [Midnight](https://midnight.network),
+as a native Android dApp. Real money movement on a privacy L1 — deposits fund
+the contract with actual wallet UTXOs, withdrawals pay recipients with actual
+UTXOs — governed by a threshold of independent signer wallets, each a
+self-custody passkey identity on its own device.
 
-Built on the Kuira starter (identity + wallet plumbing unchanged); the
-contract and UI are the Vault.
+```
+        deposit            propose              approve            execute
+  anyone ──💰──▶ vault   signer ──📋──▶ #1   signers ─✍️✍️─▶ 2/2   anyone ──✅──▶ recipient
+                          "2 NIGHT → addr"     (M of N met)         funds move
+```
+
+No proposal moves money. No single key moves money. Once M of N distinct
+signers approve, *anyone* can settle it — the approvals are the authorization,
+not the executor's identity.
 
 ---
 
-## What this gives you
+## Why this repo is interesting
 
-- **Identity + Wallet** — the SDK's `PanelBar` in floating mode drops two
-  draggable chips over your content: a **sigil** chip (one biometric forges a
-  passkey-PRF DID + wallet seed) and a **wallet** chip (NIGHT + DUST balance,
-  receive-QR, dust registration, the network picker, and settings). Tap a chip to
-  expand its sheet; drag it to dock at a screen edge.
-- **Contract** — `contract/src/Vault.compact`, composed from the vendored
-  OpenZeppelin Compact multisig modules (`SignerManager` + `ProposalManager` +
-  `UnshieldedTreasury`, `contract/oz/`). Five actions: permissionless
-  `depositUnshielded`, signer-gated `proposeWithdrawal` / `approve` /
-  `revokeApproval`, and threshold-gated permissionless `execute` (the approvals
-  are the authorization, not the executor's identity). Deposits fund the
-  contract with real wallet UTXOs; execute pays the recipient with a real UTXO —
-  the full unshielded money path in both directions.
-- **Multi-device multisig** — deploy a 3-signer Vault (threshold 1–3) with
-  co-signer public keys, share the vault address, and a second device
-  **Connects** to it: threshold, treasury balance, proposals, per-signer
-  approval state, and signer membership are all read from chain via
-  `MidnightContract.read()` (view-circuit calls — no local tracking). Approvals
-  update live as other signers act.
-- **Guided governance UI** — each proposal is a card with a plain-words status
+- **The full unshielded money path, both directions.** `depositUnshielded`
+  claims value the transaction must actually supply (wallet UTXOs in, change
+  back); `execute` makes the contract pay the recipient a brand-new UTXO. Both
+  are exercised end-to-end against a real node — this is the part most contract
+  demos skip.
+- **Chain truth, not local state.** Threshold, treasury balance, proposals,
+  per-signer approval state — all read from the contract via view-circuit
+  calls (`MidnightContract.read` / batched `readMany`, one state snapshot per
+  refresh). A device that **Connects** to a Vault it didn't deploy sees exactly
+  what the deployer sees, and approvals update live as other signers act.
+- **Real multi-party governance on phones.** One biometric forges a passkey
+  identity + embedded wallet per device; distinct devices are distinct signers.
+  The on-chain e2e proves a true 2-of-3: three wallets, two distinct approvals,
+  a permissionless execute.
+- **A guided ceremony UI.** Every proposal is a card with a plain-words status
   (`Awaiting approvals` / `Ready to execute` / `✓ Completed`), the recipient as
   a real wallet address (flagged when it's yours), absolute approval counts,
-  and exactly the action that's valid next.
+  and exactly the one action that's valid next — a signer is never steered into
+  a contract assert.
+
+The contract composes
+[OpenZeppelin Compact Contracts](https://github.com/OpenZeppelin/compact-contracts)'
+multisig modules (`SignerManager` + `ProposalManager` + `UnshieldedTreasury`);
+identity + wallet plumbing come from the
+[Kuira SDK](https://github.com/kuiralabs/kuira-sdk-android).
 
 ---
 
-## Quick start
+## Run it
 
 ```bash
-./gradlew :app:assembleDebug                # 5 to 7 minutes on a cold cache
+./gradlew :app:assembleDebug
 ```
 
-Open in Android Studio. To actually run on a device, complete the four
-**Before you run** items below.
+Prerequisites, once:
 
-The app consumes the Kuira SDK `0.1.0-alpha05` from **mavenLocal** —
-publish it from the SDK repo first (`./gradlew publishToMavenLocal`).
-
----
-
-## Before you run
-
-Four prep steps before the Sigil-forge path will succeed on a device.
-The first three are single-string edits; the fourth is a terminal
-command:
-
-| What | Where | Currently |
-|---|---|---|
-| `applicationId` + `namespace` | `app/build.gradle.kts` | `com.kuiralabs.starter.counter` |
-| `PASSKEY_RP_ID` | `app/src/main/java/com/kuiralabs/starter/counter/di/PasskeyConfigModule.kt` | `"REPLACE_ME_WITH_YOUR_DOMAIN.example"` |
-| `assetlinks.json` | hosted at `https://<your rpId>/.well-known/assetlinks.json` | not hosted |
-| Wallet funding (localnet) | terminal — `mn` CLI | manual step, see below |
-
-The `assetlinks.json` content must declare your app's signing
-fingerprint. Full walkthrough — including release-keystore generation,
-multi-fingerprint setup, and hosting on GitHub Pages / Vercel /
-Cloudflare: [Bind your app to a passkey
-domain](https://kuiralabs.github.io/kuira-sdk-android/recipes/bind-your-app-to-a-passkey-domain/).
-
----
-
-## Funding the embedded wallet
-
-The Sigil-forge gives you a brand-new wallet with zero NIGHT and zero
-DUST. Compact contracts need DUST to pay tx fees, and the SDK won't
-deploy until both are present.
-
-**On localnet (`MidnightNetwork.UNDEPLOYED`):**
-
-> **Node version matters.** The Vault contract is compiled with
-> `compactc 0.31.1` against Compact runtime **0.16.0** — the runtime the
-> `mn localnet` default node ships. On an older node the deploy fails
-> with a runtime-version mismatch. Stick with the default and you're
-> fine.
-
-1. Open the app, tap **Forge sigil** in the panel.
-2. After forge, copy the wallet address from `WalletStatusPanel`.
-3. In a terminal, airdrop NIGHT to that address:
-   ```bash
-   mn airdrop 1000 --wallet <addr> --network undeployed
-   ```
-4. Back in the app, tap **Register dust** in the wallet panel to generate DUST
-   from that NIGHT. Do this **in-app** — the CLI's `mn dust register` takes a
-   *named* wallet from `mn wallet generate`, so it can't target the app's
-   embedded wallet address.
-5. Wait ~30 seconds for DUST to appear, then run the flow: **Deploy Vault** →
-   **Deposit** → **Propose** → **Approve** → **Execute withdrawal**.
-
-**On PREPROD:** use the public faucet (link via the wallet panel's
-copy-address button) instead of `mn airdrop`, then tap **Register dust** in
-the wallet panel — the same in-app step as localnet.
-
----
-
-## Running the multisig across two devices
-
-1. **Device B** (co-signer): forge a sigil, fund the wallet, then copy **your
-   signer key** from the deploy card and send it to device A.
-2. **Device A** (deployer): paste B's key as a co-signer, pick the threshold,
-   **Deploy** — then **Copy vault address** and send it to B.
-3. **Device B**: paste the address into **Connect to an existing Vault** — it
-   reads the Vault's state from chain and can approve as a signer.
-
-One identity caveat: two devices signed into the **same Google account** share
-a sigil (same seed → same key → the *same signer*), so a real M-of-N needs
-devices on different accounts.
-
----
-
-## Project layout
-
-```
-contract/                                 ← the on-chain piece
-  src/Vault.compact                         the multisig treasury (OZ-composed)
-  src/managed/Vault/                        compiled artifacts (committed)
-  oz/                                       vendored OpenZeppelin Compact modules
-  test/                                     simulator unit tests (vitest)
-  package.json                              pins compactc + runtime versions
-  README.md                                 rebuild + verify recipe
-
-app/                                      ← the Android app
-  build.gradle.kts                          io.github.kuiralabs.contract Gradle plugin
-  src/main/java/.../
-    KuiraStarterApp.kt                      @HiltAndroidApp
-    MainActivity.kt                         AppCompatActivity + Compose
-    di/PasskeyConfigModule.kt               Passkey rpId binding
-    data/VaultContract.kt                   MidnightContract wrapper (actions + chain reads)
-    data/VaultStore.kt                      which Vault this device points at, per network
-    ui/VaultScreen.kt                       floating PanelBar overlay + VaultCard
-    ui/VaultCard.kt                         deploy / connect / deposit / propose / approve / execute
-    ui/VaultViewModel.kt                    chain-truth state machine + live approval stream
-    ui/VaultUiState.kt                      sealed interface + ProposalView
-  src/androidTest/.../VaultDeployE2ETest.kt on-chain e2e (3 wallets, full 2-of-3 governance)
-
-fund-vault-e2e.sh                         ← host harness: funds fresh e2e wallets via mn
-```
-
----
-
-## Pinned versions
-
-| Layer | Version |
+| What | Where |
 |---|---|
-| Kuira SDK | `0.1.0-alpha05` (mavenLocal) |
-| AGP | `8.13.2` |
-| Kotlin | `2.3.20` |
-| KSP | `2.3.6` |
-| Hilt | `2.58` |
-| Compose BOM | `2026.03.01` |
-| JDK | `17` |
-| `compactc` | `0.31.1` |
-| Compact language pragma | `0.23.0` |
-| `@midnight-ntwrk/compact-runtime` | `0.16.0` |
+| Kuira SDK `0.1.0-alpha05` in **mavenLocal** | `./gradlew publishToMavenLocal` in the SDK repo |
+| `applicationId` + `PASSKEY_RP_ID` + hosted `assetlinks.json` | [Bind your app to a passkey domain](https://kuiralabs.github.io/kuira-sdk-android/recipes/bind-your-app-to-a-passkey-domain/) |
+| A localnet (`mn localnet up`) | node `0.22.5`+ — its Compact runtime `0.16.0` matches the compiled contract |
 
-The Compact toolchain triple moves independently. See
-[`contract/README.md`](contract/README.md) for the upgrade recipe.
+Then fund and go:
 
----
-
-## Known limitations today
-
-| Gap | Workaround here | Closes when |
-|---|---|---|
-| **The proposer isn't shown.** The on-chain `Proposal` struct doesn't record who proposed. | The UI shows recipient + amount + approvals only. | `Vault.compact` gains a proposer map written in `proposeWithdrawal` (contract change + redeploy). |
-| **`unshieldedBalance*` builtins compare as u64** (upstream Midnight toolchain bug — reported, with a public minimal repro at [nel349/unshielded-balance-u64-repro](https://github.com/nel349/unshielded-balance-u64-repro)). | The vendored `UnshieldedTreasury` guards via its own `_balances` map instead. | The upstream fix lands and the vendored module reverts to the builtins. |
-| **No in-app airdrop / faucet button.** | Funding is a terminal step (`mn airdrop … --network undeployed`). | The SDK ships an in-app airdrop helper for localnet. |
-| **`androidx.security:security-crypto` is deprecated by Google industry-wide.** | Used for `VaultStore`; compile-time warnings are expected. | Google's recommended replacement stabilises. |
+1. **Forge sigil** in the app → copy the wallet address.
+2. `mn airdrop 1000 --wallet <addr> --network undeployed`
+3. **Register dust** in the wallet panel (in-app — the CLI can't sign for the
+   embedded wallet), wait ~30s.
+4. **Deploy Vault** → **Deposit** → **Propose** → **Approve** → **Execute
+   withdrawal**. Threshold 1 lets one device run the whole ceremony solo.
 
 ---
 
-## FAQ
+## The real thing: two devices, real approvals
 
-**Q: Forge fails with `RP_ID_MISMATCH` / `PRF authentication failed` /
-"credential creation failed" / silent biometric prompt dismissal.**
-A: All four are surface symptoms of the same underlying problem —
-the rpId you set in `PasskeyConfigModule.kt` does not match an
-`assetlinks.json` that lists this app's package + signing-cert
-fingerprint at `https://<rpId>/.well-known/assetlinks.json`.
+1. **Device B** (co-signer): forge a sigil, fund it, copy **your signer key**
+   from the deploy card → send it to A.
+2. **Device A** (deployer): paste B's key as a co-signer, pick threshold 2,
+   **Deploy** → **Copy vault address** → send it to B.
+3. **Device B**: paste into **Connect to an existing Vault**. B now sees the
+   live treasury and proposals, and approves as a signer — A watches the
+   count tick to 2/2, then either device executes.
 
-Checklist:
+Identity caveat: two devices on the **same Google account** share a sigil
+(same seed → the *same signer*) — real M-of-N needs devices on different
+accounts.
 
-1. `PASSKEY_RP_ID` in `di/PasskeyConfigModule.kt` is the domain you
-   control.
-2. `https://<rpId>/.well-known/assetlinks.json` returns HTTP 200 with
-   `Content-Type: application/json` (no redirect, no auth wall, no
-   stale CDN cache from a previous app's content).
-3. The fingerprint in that file matches `./gradlew signingReport`
-   output for the build you installed (debug vs release have
-   different fingerprints — re-publish when you swap configs).
-4. **Uninstall + reinstall the app** after the assetlinks file lands;
-   `adb install -r` doesn't refresh passkey state on some devices.
+---
 
-**Q: Deploy hangs at "Balancing".**
-A: The wallet has zero DUST. Tap **Register dust** in the wallet panel, then
-wait ~30 seconds and retry deploy. (Register in-app, not via CLI — `mn dust
-register` needs a named `mn wallet generate` wallet and can't target the app's
-embedded address.)
+## Under the hood
 
-**Q: The balance or approvals don't update after an action.**
-A: The Vault re-reads chain state after every action and on each on-chain
-change (the ledger stream). A tx takes one block to land (~3s localnet, ~6s
-PREPROD), and a freshly-deployed contract takes a beat to be indexed — the app
-retries through that window. If it's still stale after ~60s, check
-`adb logcat | grep VaultViewModel` for read errors — the indexer URL may not
-be reachable.
-
-**Q: Sends fail with `Custom error: 171` after a localnet reset.**
-A: A network reset gives a fresh chain, but the wallet's on-device dust/UTXO
-caches still hold the dead chain's state. Clear the app's data (or wipe the
-SDK's dust + UTXO stores) and re-fund. Automatic invalidation on chain reset
-is a tracked SDK item.
-
-**Q: `mn localnet up` fails on Windows with `spawnSync ... cmd.exe ETIMEDOUT`.**
-A: A known `mn`-on-Windows issue. Start the stack directly instead:
-```bash
-docker compose -f ~/.midnight/localnet/compose.yml up -d
-```
-
-**Q: I'm on a physical device, or an x86_64 (Intel) emulator.**
-A: Two setup notes:
-- **Physical device:** forward the localnet ports to the phone —
-  `adb reverse tcp:9944 tcp:9944`, `adb reverse tcp:8088 tcp:8088`,
-  `adb reverse tcp:6300 tcp:6300`.
-- **x86_64 emulator:** works on SDK `alpha04+` (the native lib ships an x86_64
-  `.so`).
-
-**Q: Build fails with `Manifest merger failed: minSdkVersion 28 cannot
-be smaller than version 30`.**
-A: The SDK requires minSdk 30 (Block Store + CredentialManager). Don't
-downgrade it.
-
-**Q: Build fails with `language version X.Y.Z mismatch`.**
-A: You upgraded `compactc` or edited `pragma language_version` without
-matching the other. See [`contract/README.md` § When the Compact toolchain
-bumps](contract/README.md#when-the-compact-toolchain-bumps).
-
-**Q: Sigil restore on a fresh device doesn't see the previous wallet.**
-A: Block Store binds the backup to the Google Play Services account on
-the device. If the second device is signed into a different Google
-account, it will see `SigilStatus.None`, not `BackupAvailable`. Sign
-into the same account or forge a new sigil on the second device.
+- **Contract** — `contract/src/Vault.compact`: ~160 lines of glue over the
+  vendored OZ modules. Signer-gating is `ownPublicKey()` against the deployed
+  signer set; the threshold check gates `execute`; asserts run client-side
+  during proving, so an invalid action fails before anything is submitted.
+- **Money** — a deposit attaches a fallible unshielded offer (wallet UTXOs in,
+  change out) signed *after* proving; a withdrawal attaches an output-only
+  offer naming the recipient the contract's claimed spend must match. The
+  node's per-segment balance check keeps everyone honest.
+- **Reads** — the app tracks nothing it can read: one batched `readMany` per
+  refresh loads threshold, balance, membership, and every proposal (with
+  per-signer approval state) from a single chain snapshot, and a ledger stream
+  triggers refreshes when the contract's state changes.
+- **Rebuilding the contract** — toolchain pins and the upgrade recipe live in
+  [`contract/README.md`](contract/README.md).
 
 ---
 
 ## Tests
 
-- **Contract simulator** (no chain): `cd contract && npm test` — the multisig
-  accounting (signers, thresholds, proposal lifecycle) against the OZ
-  dry-run simulator.
+- **Contract simulator** (no chain): `cd contract && npm test` — signer,
+  threshold, and proposal-lifecycle accounting.
 - **On-chain e2e** (localnet + one emulator):
   ```bash
   VAULT_E2E_CLASS="com.kuiralabs.starter.counter.VaultDeployE2ETest#governance_full_flow_2of3" \
     ./fund-vault-e2e.sh
   ```
-  Three fresh wallets deploy a 2-of-3 Vault, deposit, propose, approve to
-  threshold, and execute the withdrawal — asserting every read (threshold,
-  balance, proposal fields, absolute statuses, approvals) against chain truth.
+  Three fresh wallets run the full 2-of-3 ceremony, asserting every read —
+  threshold, balance, proposal fields, absolute statuses, approvals — against
+  chain truth, including the batched snapshot path the app ships with.
+
+---
+
+## Known limitations
+
+| Gap | Today | Closes when |
+|---|---|---|
+| The **proposer** isn't shown | The on-chain `Proposal` struct doesn't record it | `Vault.compact` gains a proposer map (contract change + redeploy) |
+| `unshieldedBalance*` builtins compare as u64 (upstream bug — [public repro](https://github.com/nel349/unshielded-balance-u64-repro)) | The vendored treasury guards via its own `_balances` map | The upstream fix lands |
+| No in-app faucet | Funding is a terminal step | The SDK ships a localnet airdrop helper |
+
+---
+
+## Troubleshooting
+
+- **Forge fails (`RP_ID_MISMATCH`, PRF errors, silent biometric dismissal)** —
+  one cause: the rpId doesn't match a hosted `assetlinks.json` listing this
+  app's package + signing fingerprint. Recheck the
+  [binding walkthrough](https://kuiralabs.github.io/kuira-sdk-android/recipes/bind-your-app-to-a-passkey-domain/),
+  then **uninstall + reinstall** (`adb install -r` doesn't refresh passkey
+  state).
+- **Deploy hangs at "Balancing"** — zero DUST. Register dust in-app, wait
+  ~30s, retry.
+- **Balances/approvals stale** — a tx takes a block (~3s localnet) and a fresh
+  contract takes a beat to index; the app retries through it. Still stale
+  after ~60s → `adb logcat | grep VaultViewModel`.
+- **`Custom error: 171` after a localnet reset** — the fresh chain vs the
+  wallet's cached dust/UTXO state. Clear app data and re-fund (automatic
+  invalidation is a tracked SDK item).
+- **Physical device** — `adb reverse` ports 9944/8088/6300. **minSdk** stays
+  30. **`language version mismatch`** → see
+  [`contract/README.md`](contract/README.md#when-the-compact-toolchain-bumps).
 
 ---
 
 ## Acknowledgements
 
-The multisig modules the Vault composes (`SignerManager`, `ProposalManager`,
-`UnshieldedTreasury`) come from
+The multisig modules the Vault composes come from
 **[OpenZeppelin Compact Contracts](https://github.com/OpenZeppelin/compact-contracts)**
 (MIT), vendored at `v0.3.0-alpha` under [`contract/oz/`](contract/oz/) with
 their license and audit reports intact — see
 [`contract/oz/UPSTREAM.md`](contract/oz/UPSTREAM.md) for the exact pin and the
-local modifications (notably the `unshieldedBalance*` u64 workaround). Thank
-you to the OpenZeppelin team for building the Compact library this Vault
-stands on.
-
----
+local modifications. Thank you to the OpenZeppelin team for building the
+Compact library this Vault stands on.
 
 ## License
 
