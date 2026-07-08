@@ -158,6 +158,22 @@ class VaultDeployE2ETest {
         assertTrue("signer A approval must finalize", approveA)
         assertTrue("signer B approval must finalize (distinct signer, threshold met)", approveB)
         assertEquals("read: approval count == 2", 2, VaultContract.getApprovalCount(reader, FIRST_PROPOSAL_ID))
+
+        // The BATCHED snapshot (readMany — the app's production read path) must agree with the
+        // individually-verified single reads above, from one consistent chain state.
+        val snap = VaultContract.loadSnapshot(reader, a.coinPublicKey, ByteArray(32))
+        assertEquals("snapshot: threshold", 2, snap.threshold)
+        assertEquals("snapshot: signer count", 3, snap.signerCount)
+        assertEquals("snapshot: balance", BigInteger.valueOf(5_000_000L), snap.balanceBase)
+        assertTrue("snapshot: A is a signer", snap.isSigner)
+        assertEquals("snapshot: one proposal enumerated", 1, snap.proposals.size)
+        assertEquals("snapshot: approvals", 2, snap.proposals[0].approvals)
+        assertTrue("snapshot: A already approved", snap.proposals[0].approvedByMe)
+        assertEquals(
+            "snapshot: status ACTIVE pre-execute",
+            VaultContract.PROPOSAL_STATUS_ACTIVE,
+            snap.proposals[0].proposal.status,
+        )
         Log.i(TAG, "Proposal 1 approved by signers A + B (2/2 threshold)")
 
         // Permissionless execute (wallet C — not a required approver): the threshold is the

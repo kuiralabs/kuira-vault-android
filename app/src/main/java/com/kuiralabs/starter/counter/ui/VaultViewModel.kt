@@ -6,7 +6,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kuiralabs.starter.counter.data.VaultContract
 import com.kuiralabs.starter.counter.data.VaultStore
-import com.midnight.kuira.core.compact.ContractCallException
 import com.midnight.kuira.core.compact.ContractCallStage
 import com.midnight.kuira.core.compact.MidnightContract
 import com.midnight.kuira.core.crypto.address.Bech32m
@@ -207,49 +206,44 @@ class VaultViewModel @Inject constructor(
         }
     }
 
-    // A freshly-deployed (or just-connected) contract isn't in the indexer for a beat, so the first
-    // read throws "Contract not found". Retry until it lands rather than surfacing a transient error.
+    // The SDK's readMany retries the not-yet-indexed window itself (a freshly-deployed or
+    // just-connected contract lags the indexer); this wrapper only maps failures to the error
+    // banner. CancellationException must propagate — a newer refresh cancels this one routinely.
     private suspend fun loadWithIndexerRetry(
         sdk: MidnightSdk,
         address: String,
         timeoutMs: Long = 60_000L,
     ): VaultUiState.Deployed? {
-        val deadline = System.currentTimeMillis() + timeoutMs
-        while (true) {
-            try {
-                return loadFromChain(sdk, address)
-            } catch (e: CancellationException) {
-                // A newer refresh cancelled this one — propagate so structured cancellation works
-                // (catching it as a generic Exception surfaced "Read failed: Job was cancelled"
-                // banners and let the cancelled coroutine keep writing stale state).
-                throw e
-            } catch (e: ContractCallException.StateFetchFailed) {
-                if (System.currentTimeMillis() > deadline) {
-                    _error.value = "Read failed: ${e.message}"
-                    return null
-                }
-                delay(2_000) // contract not indexed yet
-            } catch (e: Exception) {
-                Log.e(TAG, "Vault chain read failed", e)
-                _error.value = "Read failed: ${e.message}"
-                return null
-            }
+        return try {
+            loadFromChain(sdk, address, notIndexedTimeoutMs = timeoutMs)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "Vault chain read failed", e)
+            _error.value = "Read failed: ${e.message}"
+            null
         }
     }
 
-    private suspend fun loadFromChain(sdk: MidnightSdk, address: String): VaultUiState.Deployed {
+    private suspend fun loadFromChain(
+        sdk: MidnightSdk,
+        address: String,
+        notIndexedTimeoutMs: Long = 0,
+    ): VaultUiState.Deployed {
         val handle = readHandleFor(sdk, address)
-        val threshold = VaultContract.getThreshold(handle)
-        val signerCount = VaultContract.getSignerCount(handle)
-        val balance = VaultContract.getUnshieldedBalance(handle, NATIVE_COLOR)
-        // Let a failure PROPAGATE (retry/error path) rather than default to false — a transient
-        // read failure must not silently demote a real signer to a view-only UI.
-        val isSigner = VaultContract.isSignerByKey(handle, sdk.coinPublicKey)
+        // ONE batched read for the whole screen (header + proposals + per-signer approval state),
+        // all against the same chain snapshot — instead of a state fetch + engine boot per value.
+        val snap = VaultContract.loadSnapshot(
+            handle,
+            coinPublicKey = sdk.coinPublicKey,
+            color = NATIVE_COLOR,
+            notIndexedTimeoutMs = notIndexedTimeoutMs,
+        )
         // Recipients display as real wallet addresses (re-encoded from the on-chain hash with
         // this wallet's HRP — same network by construction), marked when they're this wallet.
         val myHrp = Bech32m.decode(sdk.walletAddress).first
         val myHashHex = Bech32m.decode(sdk.walletAddress).second.toHex()
-        val proposals = VaultContract.listProposals(handle).map { p ->
+        val proposals = snap.proposals.map { p ->
             val executed = p.proposal.status == VaultContract.PROPOSAL_STATUS_EXECUTED
             ProposalView(
                 id = p.id,
@@ -257,21 +251,18 @@ class VaultViewModel @Inject constructor(
                 recipientIsMe = p.proposal.recipientHashHex.equals(myHashHex, ignoreCase = true),
                 amount = p.proposal.amountBase,
                 approvals = p.approvals,
-                threshold = threshold,
+                threshold = snap.threshold,
                 executed = executed,
-                // Per-signer state so the UI never guides a signer into the contract's
-                // "already approved" assert (only read where it matters: open proposals).
-                approvedByMe = isSigner && !executed &&
-                    VaultContract.isApprovedByKey(handle, p.id, sdk.coinPublicKey),
+                approvedByMe = snap.isSigner && !executed && p.approvedByMe,
             )
         }.sortedByDescending { it.id }
         return VaultUiState.Deployed(
             address = address,
-            threshold = threshold,
-            signerCount = signerCount,
-            treasuryBalance = balance,
+            threshold = snap.threshold,
+            signerCount = snap.signerCount,
+            treasuryBalance = snap.balanceBase,
             proposals = proposals,
-            isSigner = isSigner,
+            isSigner = snap.isSigner,
         )
     }
 

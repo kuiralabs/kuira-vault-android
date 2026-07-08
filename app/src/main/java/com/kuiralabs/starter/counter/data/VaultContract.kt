@@ -1,6 +1,7 @@
 package com.kuiralabs.starter.counter.data
 
 import android.content.Context
+import com.midnight.kuira.core.compact.CircuitExecutionException
 import com.midnight.kuira.core.compact.CompactEnum
 import com.midnight.kuira.core.compact.ContractCallStage
 import com.midnight.kuira.core.compact.MidnightContract
@@ -276,8 +277,11 @@ internal object VaultContract {
     suspend fun isSignerByKey(handle: MidnightContract, coinPublicKey: ByteArray): Boolean =
         jsonScalar(handle.read("isSigner", signerStruct(coinPublicKey))).toBooleanStrict()
 
-    suspend fun getProposal(handle: MidnightContract, proposalId: Long): OnChainProposal {
-        val o = JSONObject(handle.read("getProposal", BigInteger.valueOf(proposalId)))
+    suspend fun getProposal(handle: MidnightContract, proposalId: Long): OnChainProposal =
+        parseProposal(handle.read("getProposal", BigInteger.valueOf(proposalId)))
+
+    private fun parseProposal(json: String): OnChainProposal {
+        val o = JSONObject(json)
         val to = o.getJSONObject("to")
         return OnChainProposal(
             recipientKind = to.getInt("kind"),
@@ -322,6 +326,92 @@ internal object VaultContract {
     private const val PROPOSAL_NOT_FOUND = "proposal not found"
 
     data class ProposalWithApprovals(val id: Long, val proposal: OnChainProposal, val approvals: Int)
+
+    /** Everything the Vault screen shows, read in batched snapshots (see [loadSnapshot]). */
+    data class VaultSnapshot(
+        val threshold: Int,
+        val signerCount: Int,
+        val balanceBase: BigInteger,
+        val isSigner: Boolean,
+        val proposals: List<SnapshotProposal>,
+    )
+
+    data class SnapshotProposal(
+        val id: Long,
+        val proposal: OnChainProposal,
+        val approvals: Int,
+        val approvedByMe: Boolean,
+    )
+
+    /**
+     * Load the whole Vault view in batched reads: ONE readMany for the header (threshold, signer
+     * count, balance, membership) plus the first page of proposals, then one readMany per further
+     * page — instead of a state fetch + engine boot per circuit. All reads within a batch see the
+     * SAME chain snapshot. [notIndexedTimeoutMs] > 0 waits through the indexer lag of a
+     * freshly-deployed/connected contract (SDK-side retry).
+     */
+    suspend fun loadSnapshot(
+        handle: MidnightContract,
+        coinPublicKey: ByteArray,
+        color: ByteArray,
+        notIndexedTimeoutMs: Long = 0,
+        pageSize: Int = 8,
+        maxProposals: Int = 100,
+    ): VaultSnapshot {
+        val signer = signerStruct(coinPublicKey)
+
+        fun proposalRequests(ids: LongRange): List<MidnightContract.ReadRequest> = ids.flatMap { id ->
+            listOf(
+                MidnightContract.ReadRequest("p:$id", "getProposal", listOf(BigInteger.valueOf(id))),
+                MidnightContract.ReadRequest("a:$id", "getApprovalCount", listOf(BigInteger.valueOf(id))),
+                MidnightContract.ReadRequest("m:$id", "isApprovedBySigner", listOf(BigInteger.valueOf(id), signer)),
+            )
+        }
+
+        // Header + first proposal page in one batch.
+        val headerRequests = listOf(
+            MidnightContract.ReadRequest("threshold", "getThreshold"),
+            MidnightContract.ReadRequest("signers", "getSignerCount"),
+            MidnightContract.ReadRequest("balance", "getUnshieldedBalance", listOf(color)),
+            MidnightContract.ReadRequest("isSigner", "isSigner", listOf(signer)),
+        )
+        var page = 1L..pageSize.toLong()
+        var results = handle.readMany(headerRequests + proposalRequests(page), notIndexedTimeoutMs)
+
+        fun ok(key: String): String {
+            val r = results[key] ?: error("missing read result '$key'")
+            r.error?.let { throw CircuitExecutionException("Vault read '$key' failed: $it") }
+            return r.json!!
+        }
+        val threshold = jsonScalar(ok("threshold")).toInt()
+        val signerCount = jsonScalar(ok("signers")).toInt()
+        val balance = BigInteger(jsonScalar(ok("balance")))
+        val isSigner = jsonScalar(ok("isSigner")).toBooleanStrict()
+
+        val proposals = mutableListOf<SnapshotProposal>()
+        outer@ while (true) {
+            for (id in page) {
+                val p = results["p:$id"] ?: error("missing read result 'p:$id'")
+                val pErr = p.error
+                if (pErr != null) {
+                    // The contract's own not-found assert = past the last proposal; anything else
+                    // is a real failure and must not silently truncate the list.
+                    if (pErr.contains(PROPOSAL_NOT_FOUND, ignoreCase = true)) break@outer
+                    throw CircuitExecutionException("Vault read 'p:$id' failed: $pErr")
+                }
+                proposals += SnapshotProposal(
+                    id = id,
+                    proposal = parseProposal(p.json!!),
+                    approvals = jsonScalar(ok("a:$id")).toInt(),
+                    approvedByMe = jsonScalar(ok("m:$id")).toBooleanStrict(),
+                )
+            }
+            if (proposals.size >= maxProposals) break
+            page = (page.last + 1)..(page.last + pageSize)
+            results = handle.readMany(proposalRequests(page))
+        }
+        return VaultSnapshot(threshold, signerCount, balance, isSigner, proposals)
+    }
 
     // ProposalStatus enum ordinals — the declaration ORDER in ProposalManager.compact is
     // {Inactive, Active, Executed, Cancelled}. The leading Inactive is easy to miss (a
