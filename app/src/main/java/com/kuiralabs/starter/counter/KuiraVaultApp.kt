@@ -6,7 +6,7 @@ import com.midnight.kuira.sdk.walletruntime.WalletForegroundService
 import dagger.hilt.android.HiltAndroidApp
 
 @HiltAndroidApp
-class KuiraStarterApp : Application() {
+class KuiraVaultApp : Application() {
     override fun onCreate() {
         super.onCreate()
         // Session auto-lock (#14): app-level triggers (background + screen-off).

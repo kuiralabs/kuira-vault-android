@@ -32,7 +32,7 @@ android {
             isMinifyEnabled = false
         }
         release {
-            // TODO before shipping: turn on R8 + ProGuard. The starter
+            // TODO before shipping: turn on R8 + ProGuard. This app
             // ships minify-off so newcomers see exactly the byte code
             // their source compiled to. A production app should set
             // isMinifyEnabled = true with a `proguardFiles(...)` line

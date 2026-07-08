@@ -26,6 +26,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "midnight-vault"
+rootProject.name = "kuira-vault-android"
 
 include(":app")
