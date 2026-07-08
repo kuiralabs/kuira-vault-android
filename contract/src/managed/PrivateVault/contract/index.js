@@ -198,29 +198,29 @@ export class Contract {
     }
     this.witnesses = witnesses_0;
     this.circuits = {
-      depositUnshielded: (...args_1) => {
+      pvDepositUnshielded: (...args_1) => {
         if (args_1.length !== 3) {
-          throw new __compactRuntime.CompactError(`depositUnshielded: expected 3 arguments (as invoked from Typescript), received ${args_1.length}`);
+          throw new __compactRuntime.CompactError(`pvDepositUnshielded: expected 3 arguments (as invoked from Typescript), received ${args_1.length}`);
         }
         const contextOrig_0 = args_1[0];
         const color_0 = args_1[1];
         const amount_0 = args_1[2];
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
-          __compactRuntime.typeError('depositUnshielded',
+          __compactRuntime.typeError('pvDepositUnshielded',
                                      'argument 1 (as invoked from Typescript)',
                                      'PrivateVault.compact line 112 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
         if (!(color_0.buffer instanceof ArrayBuffer && color_0.BYTES_PER_ELEMENT === 1 && color_0.length === 32)) {
-          __compactRuntime.typeError('depositUnshielded',
+          __compactRuntime.typeError('pvDepositUnshielded',
                                      'argument 1 (argument 2 as invoked from Typescript)',
                                      'PrivateVault.compact line 112 char 1',
                                      'Bytes<32>',
                                      color_0)
         }
         if (!(typeof(amount_0) === 'bigint' && amount_0 >= 0n && amount_0 <= 340282366920938463463374607431768211455n)) {
-          __compactRuntime.typeError('depositUnshielded',
+          __compactRuntime.typeError('pvDepositUnshielded',
                                      'argument 2 (argument 3 as invoked from Typescript)',
                                      'PrivateVault.compact line 112 char 1',
                                      'Uint<0..340282366920938463463374607431768211456>',
@@ -236,44 +236,44 @@ export class Contract {
           publicTranscript: [],
           privateTranscriptOutputs: []
         };
-        const result_0 = this._depositUnshielded_0(context,
-                                                   partialProofData,
-                                                   color_0,
-                                                   amount_0);
+        const result_0 = this._pvDepositUnshielded_0(context,
+                                                     partialProofData,
+                                                     color_0,
+                                                     amount_0);
         partialProofData.output = { value: [], alignment: [] };
         return { result: result_0, context: context, proofData: partialProofData, gasCost: context.gasCost };
       },
-      proposeWithdrawal: (...args_1) => {
+      pvProposeWithdrawal: (...args_1) => {
         if (args_1.length !== 4) {
-          throw new __compactRuntime.CompactError(`proposeWithdrawal: expected 4 arguments (as invoked from Typescript), received ${args_1.length}`);
+          throw new __compactRuntime.CompactError(`pvProposeWithdrawal: expected 4 arguments (as invoked from Typescript), received ${args_1.length}`);
         }
         const contextOrig_0 = args_1[0];
         const commitment_0 = args_1[1];
         const payload_0 = args_1[2];
         const salt_0 = args_1[3];
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
-          __compactRuntime.typeError('proposeWithdrawal',
+          __compactRuntime.typeError('pvProposeWithdrawal',
                                      'argument 1 (as invoked from Typescript)',
                                      'PrivateVault.compact line 122 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
         if (!(commitment_0.buffer instanceof ArrayBuffer && commitment_0.BYTES_PER_ELEMENT === 1 && commitment_0.length === 32)) {
-          __compactRuntime.typeError('proposeWithdrawal',
+          __compactRuntime.typeError('pvProposeWithdrawal',
                                      'argument 1 (argument 2 as invoked from Typescript)',
                                      'PrivateVault.compact line 122 char 1',
                                      'Bytes<32>',
                                      commitment_0)
         }
         if (!(payload_0.buffer instanceof ArrayBuffer && payload_0.BYTES_PER_ELEMENT === 1 && payload_0.length === 160)) {
-          __compactRuntime.typeError('proposeWithdrawal',
+          __compactRuntime.typeError('pvProposeWithdrawal',
                                      'argument 2 (argument 3 as invoked from Typescript)',
                                      'PrivateVault.compact line 122 char 1',
                                      'Bytes<160>',
                                      payload_0)
         }
         if (!(salt_0.buffer instanceof ArrayBuffer && salt_0.BYTES_PER_ELEMENT === 1 && salt_0.length === 32)) {
-          __compactRuntime.typeError('proposeWithdrawal',
+          __compactRuntime.typeError('pvProposeWithdrawal',
                                      'argument 3 (argument 4 as invoked from Typescript)',
                                      'PrivateVault.compact line 122 char 1',
                                      'Bytes<32>',
@@ -289,37 +289,37 @@ export class Contract {
           publicTranscript: [],
           privateTranscriptOutputs: []
         };
-        const result_0 = this._proposeWithdrawal_0(context,
-                                                   partialProofData,
-                                                   commitment_0,
-                                                   payload_0,
-                                                   salt_0);
+        const result_0 = this._pvProposeWithdrawal_0(context,
+                                                     partialProofData,
+                                                     commitment_0,
+                                                     payload_0,
+                                                     salt_0);
         partialProofData.output = { value: _descriptor_2.toValue(result_0), alignment: _descriptor_2.alignment() };
         return { result: result_0, context: context, proofData: partialProofData, gasCost: context.gasCost };
       },
-      approve: (...args_1) => {
+      pvApprove: (...args_1) => {
         if (args_1.length !== 3) {
-          throw new __compactRuntime.CompactError(`approve: expected 3 arguments (as invoked from Typescript), received ${args_1.length}`);
+          throw new __compactRuntime.CompactError(`pvApprove: expected 3 arguments (as invoked from Typescript), received ${args_1.length}`);
         }
         const contextOrig_0 = args_1[0];
         const id_0 = args_1[1];
         const salt_0 = args_1[2];
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
-          __compactRuntime.typeError('approve',
+          __compactRuntime.typeError('pvApprove',
                                      'argument 1 (as invoked from Typescript)',
                                      'PrivateVault.compact line 141 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
         if (!(typeof(id_0) === 'bigint' && id_0 >= 0n && id_0 <= 18446744073709551615n)) {
-          __compactRuntime.typeError('approve',
+          __compactRuntime.typeError('pvApprove',
                                      'argument 1 (argument 2 as invoked from Typescript)',
                                      'PrivateVault.compact line 141 char 1',
                                      'Uint<0..18446744073709551616>',
                                      id_0)
         }
         if (!(salt_0.buffer instanceof ArrayBuffer && salt_0.BYTES_PER_ELEMENT === 1 && salt_0.length === 32)) {
-          __compactRuntime.typeError('approve',
+          __compactRuntime.typeError('pvApprove',
                                      'argument 2 (argument 3 as invoked from Typescript)',
                                      'PrivateVault.compact line 141 char 1',
                                      'Bytes<32>',
@@ -335,33 +335,36 @@ export class Contract {
           publicTranscript: [],
           privateTranscriptOutputs: []
         };
-        const result_0 = this._approve_0(context, partialProofData, id_0, salt_0);
+        const result_0 = this._pvApprove_0(context,
+                                           partialProofData,
+                                           id_0,
+                                           salt_0);
         partialProofData.output = { value: [], alignment: [] };
         return { result: result_0, context: context, proofData: partialProofData, gasCost: context.gasCost };
       },
-      revokeApproval: (...args_1) => {
+      pvRevokeApproval: (...args_1) => {
         if (args_1.length !== 3) {
-          throw new __compactRuntime.CompactError(`revokeApproval: expected 3 arguments (as invoked from Typescript), received ${args_1.length}`);
+          throw new __compactRuntime.CompactError(`pvRevokeApproval: expected 3 arguments (as invoked from Typescript), received ${args_1.length}`);
         }
         const contextOrig_0 = args_1[0];
         const id_0 = args_1[1];
         const salt_0 = args_1[2];
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
-          __compactRuntime.typeError('revokeApproval',
+          __compactRuntime.typeError('pvRevokeApproval',
                                      'argument 1 (as invoked from Typescript)',
                                      'PrivateVault.compact line 153 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
         if (!(typeof(id_0) === 'bigint' && id_0 >= 0n && id_0 <= 18446744073709551615n)) {
-          __compactRuntime.typeError('revokeApproval',
+          __compactRuntime.typeError('pvRevokeApproval',
                                      'argument 1 (argument 2 as invoked from Typescript)',
                                      'PrivateVault.compact line 153 char 1',
                                      'Uint<0..18446744073709551616>',
                                      id_0)
         }
         if (!(salt_0.buffer instanceof ArrayBuffer && salt_0.BYTES_PER_ELEMENT === 1 && salt_0.length === 32)) {
-          __compactRuntime.typeError('revokeApproval',
+          __compactRuntime.typeError('pvRevokeApproval',
                                      'argument 2 (argument 3 as invoked from Typescript)',
                                      'PrivateVault.compact line 153 char 1',
                                      'Bytes<32>',
@@ -377,16 +380,16 @@ export class Contract {
           publicTranscript: [],
           privateTranscriptOutputs: []
         };
-        const result_0 = this._revokeApproval_0(context,
-                                                partialProofData,
-                                                id_0,
-                                                salt_0);
+        const result_0 = this._pvRevokeApproval_0(context,
+                                                  partialProofData,
+                                                  id_0,
+                                                  salt_0);
         partialProofData.output = { value: [], alignment: [] };
         return { result: result_0, context: context, proofData: partialProofData, gasCost: context.gasCost };
       },
-      execute: (...args_1) => {
+      pvExecute: (...args_1) => {
         if (args_1.length !== 9) {
-          throw new __compactRuntime.CompactError(`execute: expected 9 arguments (as invoked from Typescript), received ${args_1.length}`);
+          throw new __compactRuntime.CompactError(`pvExecute: expected 9 arguments (as invoked from Typescript), received ${args_1.length}`);
         }
         const contextOrig_0 = args_1[0];
         const id_0 = args_1[1];
@@ -398,63 +401,63 @@ export class Contract {
         const threshold_0 = args_1[7];
         const thresholdSalt_0 = args_1[8];
         if (!(typeof(contextOrig_0) === 'object' && contextOrig_0.currentQueryContext != undefined)) {
-          __compactRuntime.typeError('execute',
+          __compactRuntime.typeError('pvExecute',
                                      'argument 1 (as invoked from Typescript)',
                                      'PrivateVault.compact line 171 char 1',
                                      'CircuitContext',
                                      contextOrig_0)
         }
         if (!(typeof(id_0) === 'bigint' && id_0 >= 0n && id_0 <= 18446744073709551615n)) {
-          __compactRuntime.typeError('execute',
+          __compactRuntime.typeError('pvExecute',
                                      'argument 1 (argument 2 as invoked from Typescript)',
                                      'PrivateVault.compact line 171 char 1',
                                      'Uint<0..18446744073709551616>',
                                      id_0)
         }
         if (!(typeof(recipientIsContract_0) === 'boolean')) {
-          __compactRuntime.typeError('execute',
+          __compactRuntime.typeError('pvExecute',
                                      'argument 2 (argument 3 as invoked from Typescript)',
                                      'PrivateVault.compact line 171 char 1',
                                      'Boolean',
                                      recipientIsContract_0)
         }
         if (!(recipient_0.buffer instanceof ArrayBuffer && recipient_0.BYTES_PER_ELEMENT === 1 && recipient_0.length === 32)) {
-          __compactRuntime.typeError('execute',
+          __compactRuntime.typeError('pvExecute',
                                      'argument 3 (argument 4 as invoked from Typescript)',
                                      'PrivateVault.compact line 171 char 1',
                                      'Bytes<32>',
                                      recipient_0)
         }
         if (!(color_0.buffer instanceof ArrayBuffer && color_0.BYTES_PER_ELEMENT === 1 && color_0.length === 32)) {
-          __compactRuntime.typeError('execute',
+          __compactRuntime.typeError('pvExecute',
                                      'argument 4 (argument 5 as invoked from Typescript)',
                                      'PrivateVault.compact line 171 char 1',
                                      'Bytes<32>',
                                      color_0)
         }
         if (!(typeof(amount_0) === 'bigint' && amount_0 >= 0n && amount_0 <= 340282366920938463463374607431768211455n)) {
-          __compactRuntime.typeError('execute',
+          __compactRuntime.typeError('pvExecute',
                                      'argument 5 (argument 6 as invoked from Typescript)',
                                      'PrivateVault.compact line 171 char 1',
                                      'Uint<0..340282366920938463463374607431768211456>',
                                      amount_0)
         }
         if (!(nonce_0.buffer instanceof ArrayBuffer && nonce_0.BYTES_PER_ELEMENT === 1 && nonce_0.length === 32)) {
-          __compactRuntime.typeError('execute',
+          __compactRuntime.typeError('pvExecute',
                                      'argument 6 (argument 7 as invoked from Typescript)',
                                      'PrivateVault.compact line 171 char 1',
                                      'Bytes<32>',
                                      nonce_0)
         }
         if (!(typeof(threshold_0) === 'bigint' && threshold_0 >= 0n && threshold_0 <= 255n)) {
-          __compactRuntime.typeError('execute',
+          __compactRuntime.typeError('pvExecute',
                                      'argument 7 (argument 8 as invoked from Typescript)',
                                      'PrivateVault.compact line 171 char 1',
                                      'Uint<0..256>',
                                      threshold_0)
         }
         if (!(thresholdSalt_0.buffer instanceof ArrayBuffer && thresholdSalt_0.BYTES_PER_ELEMENT === 1 && thresholdSalt_0.length === 32)) {
-          __compactRuntime.typeError('execute',
+          __compactRuntime.typeError('pvExecute',
                                      'argument 8 (argument 9 as invoked from Typescript)',
                                      'PrivateVault.compact line 171 char 1',
                                      'Bytes<32>',
@@ -470,16 +473,16 @@ export class Contract {
           publicTranscript: [],
           privateTranscriptOutputs: []
         };
-        const result_0 = this._execute_0(context,
-                                         partialProofData,
-                                         id_0,
-                                         recipientIsContract_0,
-                                         recipient_0,
-                                         color_0,
-                                         amount_0,
-                                         nonce_0,
-                                         threshold_0,
-                                         thresholdSalt_0);
+        const result_0 = this._pvExecute_0(context,
+                                           partialProofData,
+                                           id_0,
+                                           recipientIsContract_0,
+                                           recipient_0,
+                                           color_0,
+                                           amount_0,
+                                           nonce_0,
+                                           threshold_0,
+                                           thresholdSalt_0);
         partialProofData.output = { value: [], alignment: [] };
         return { result: result_0, context: context, proofData: partialProofData, gasCost: context.gasCost };
       },
@@ -721,11 +724,11 @@ export class Contract {
       }
     };
     this.impureCircuits = {
-      depositUnshielded: this.circuits.depositUnshielded,
-      proposeWithdrawal: this.circuits.proposeWithdrawal,
-      approve: this.circuits.approve,
-      revokeApproval: this.circuits.revokeApproval,
-      execute: this.circuits.execute,
+      pvDepositUnshielded: this.circuits.pvDepositUnshielded,
+      pvProposeWithdrawal: this.circuits.pvProposeWithdrawal,
+      pvApprove: this.circuits.pvApprove,
+      pvRevokeApproval: this.circuits.pvRevokeApproval,
+      pvExecute: this.circuits.pvExecute,
       getProposalCount: this.circuits.getProposalCount,
       getProposalCommitment: this.circuits.getProposalCommitment,
       getProposalPayload: this.circuits.getProposalPayload,
@@ -735,11 +738,11 @@ export class Contract {
       getThresholdCommitment: this.circuits.getThresholdCommitment
     };
     this.provableCircuits = {
-      depositUnshielded: this.circuits.depositUnshielded,
-      proposeWithdrawal: this.circuits.proposeWithdrawal,
-      approve: this.circuits.approve,
-      revokeApproval: this.circuits.revokeApproval,
-      execute: this.circuits.execute,
+      pvDepositUnshielded: this.circuits.pvDepositUnshielded,
+      pvProposeWithdrawal: this.circuits.pvProposeWithdrawal,
+      pvApprove: this.circuits.pvApprove,
+      pvRevokeApproval: this.circuits.pvRevokeApproval,
+      pvExecute: this.circuits.pvExecute,
       getProposalCount: this.circuits.getProposalCount,
       getProposalCommitment: this.circuits.getProposalCommitment,
       getProposalPayload: this.circuits.getProposalPayload,
@@ -791,11 +794,11 @@ export class Contract {
     stateValue_0 = stateValue_0.arrayPush(__compactRuntime.StateValue.newNull());
     stateValue_0 = stateValue_0.arrayPush(__compactRuntime.StateValue.newNull());
     state_0.data = new __compactRuntime.ChargedState(stateValue_0);
-    state_0.setOperation('depositUnshielded', new __compactRuntime.ContractOperation());
-    state_0.setOperation('proposeWithdrawal', new __compactRuntime.ContractOperation());
-    state_0.setOperation('approve', new __compactRuntime.ContractOperation());
-    state_0.setOperation('revokeApproval', new __compactRuntime.ContractOperation());
-    state_0.setOperation('execute', new __compactRuntime.ContractOperation());
+    state_0.setOperation('pvDepositUnshielded', new __compactRuntime.ContractOperation());
+    state_0.setOperation('pvProposeWithdrawal', new __compactRuntime.ContractOperation());
+    state_0.setOperation('pvApprove', new __compactRuntime.ContractOperation());
+    state_0.setOperation('pvRevokeApproval', new __compactRuntime.ContractOperation());
+    state_0.setOperation('pvExecute', new __compactRuntime.ContractOperation());
     state_0.setOperation('getProposalCount', new __compactRuntime.ContractOperation());
     state_0.setOperation('getProposalCommitment', new __compactRuntime.ContractOperation());
     state_0.setOperation('getProposalPayload', new __compactRuntime.ContractOperation());
@@ -1234,14 +1237,14 @@ export class Contract {
                                                                                    result: undefined } }]).value);
     }
   }
-  _depositUnshielded_0(context, partialProofData, color_0, amount_0) {
+  _pvDepositUnshielded_0(context, partialProofData, color_0, amount_0) {
     this.__deposit_0(context, partialProofData, color_0, amount_0); return [];
   }
-  _proposeWithdrawal_0(context,
-                       partialProofData,
-                       commitment_0,
-                       payload_0,
-                       salt_0)
+  _pvProposeWithdrawal_0(context,
+                         partialProofData,
+                         commitment_0,
+                         payload_0,
+                         salt_0)
   {
     this._assertSigner_0(context, partialProofData, salt_0);
     __compactRuntime.assert(!this._equal_3(commitment_0, new Uint8Array(32)),
@@ -1363,7 +1366,7 @@ export class Contract {
                                        { ins: { cached: true, n: 1 } }]);
     return id_0;
   }
-  _approve_0(context, partialProofData, id_0, salt_0) {
+  _pvApprove_0(context, partialProofData, id_0, salt_0) {
     this._assertProposalActive_0(context, partialProofData, id_0);
     this._assertSigner_0(context, partialProofData, salt_0);
     const tag_0 = this._approvalTag_0(context, partialProofData, id_0, salt_0);
@@ -1450,7 +1453,7 @@ export class Contract {
                                        { ins: { cached: true, n: 1 } }]);
     return [];
   }
-  _revokeApproval_0(context, partialProofData, id_0, salt_0) {
+  _pvRevokeApproval_0(context, partialProofData, id_0, salt_0) {
     this._assertProposalActive_0(context, partialProofData, id_0);
     this._assertSigner_0(context, partialProofData, salt_0);
     const tag_0 = this._approvalTag_0(context, partialProofData, id_0, salt_0);
@@ -1532,16 +1535,16 @@ export class Contract {
                                        { ins: { cached: true, n: 1 } }]);
     return [];
   }
-  _execute_0(context,
-             partialProofData,
-             id_0,
-             recipientIsContract_0,
-             recipient_0,
-             color_0,
-             amount_0,
-             nonce_0,
-             threshold_0,
-             thresholdSalt_0)
+  _pvExecute_0(context,
+               partialProofData,
+               id_0,
+               recipientIsContract_0,
+               recipient_0,
+               color_0,
+               amount_0,
+               nonce_0,
+               threshold_0,
+               thresholdSalt_0)
   {
     this._assertProposalActive_0(context, partialProofData, id_0);
     const expected_0 = this._proposalCommitment_0(recipientIsContract_0,

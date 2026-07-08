@@ -40,18 +40,18 @@ export class PrivateVaultSimulator extends PrivateVaultSimulatorBase {
 
   // Deposit (permissionless)
   public depositUnshielded(color: Uint8Array, amount: bigint): Promise<[]> {
-    return this.circuits.impure.depositUnshielded(color, amount);
+    return this.circuits.impure.pvDepositUnshielded(color, amount);
   }
 
   // Proposal lifecycle
   public proposeWithdrawal(commitment: Uint8Array, payload: Uint8Array, salt: Uint8Array): Promise<bigint> {
-    return this.circuits.impure.proposeWithdrawal(commitment, payload, salt);
+    return this.circuits.impure.pvProposeWithdrawal(commitment, payload, salt);
   }
   public approve(id: bigint, salt: Uint8Array): Promise<[]> {
-    return this.circuits.impure.approve(id, salt);
+    return this.circuits.impure.pvApprove(id, salt);
   }
   public revokeApproval(id: bigint, salt: Uint8Array): Promise<[]> {
-    return this.circuits.impure.revokeApproval(id, salt);
+    return this.circuits.impure.pvRevokeApproval(id, salt);
   }
   public execute(
     id: bigint,
@@ -63,7 +63,7 @@ export class PrivateVaultSimulator extends PrivateVaultSimulatorBase {
     threshold: bigint,
     thresholdSalt: Uint8Array,
   ): Promise<[]> {
-    return this.circuits.impure.execute(
+    return this.circuits.impure.pvExecute(
       id, recipientIsContract, recipient, color, amount, nonce, threshold, thresholdSalt,
     );
   }

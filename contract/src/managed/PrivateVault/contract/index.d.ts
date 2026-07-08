@@ -6,28 +6,28 @@ export type Witnesses<PS> = {
 }
 
 export type ImpureCircuits<PS> = {
-  depositUnshielded(context: __compactRuntime.CircuitContext<PS>,
-                    color_0: Uint8Array,
-                    amount_0: bigint): __compactRuntime.CircuitResults<PS, []>;
-  proposeWithdrawal(context: __compactRuntime.CircuitContext<PS>,
-                    commitment_0: Uint8Array,
-                    payload_0: Uint8Array,
-                    salt_0: Uint8Array): __compactRuntime.CircuitResults<PS, bigint>;
-  approve(context: __compactRuntime.CircuitContext<PS>,
-          id_0: bigint,
-          salt_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
-  revokeApproval(context: __compactRuntime.CircuitContext<PS>,
-                 id_0: bigint,
-                 salt_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
-  execute(context: __compactRuntime.CircuitContext<PS>,
-          id_0: bigint,
-          recipientIsContract_0: boolean,
-          recipient_0: Uint8Array,
-          color_0: Uint8Array,
-          amount_0: bigint,
-          nonce_0: Uint8Array,
-          threshold_0: bigint,
-          thresholdSalt_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
+  pvDepositUnshielded(context: __compactRuntime.CircuitContext<PS>,
+                      color_0: Uint8Array,
+                      amount_0: bigint): __compactRuntime.CircuitResults<PS, []>;
+  pvProposeWithdrawal(context: __compactRuntime.CircuitContext<PS>,
+                      commitment_0: Uint8Array,
+                      payload_0: Uint8Array,
+                      salt_0: Uint8Array): __compactRuntime.CircuitResults<PS, bigint>;
+  pvApprove(context: __compactRuntime.CircuitContext<PS>,
+            id_0: bigint,
+            salt_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
+  pvRevokeApproval(context: __compactRuntime.CircuitContext<PS>,
+                   id_0: bigint,
+                   salt_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
+  pvExecute(context: __compactRuntime.CircuitContext<PS>,
+            id_0: bigint,
+            recipientIsContract_0: boolean,
+            recipient_0: Uint8Array,
+            color_0: Uint8Array,
+            amount_0: bigint,
+            nonce_0: Uint8Array,
+            threshold_0: bigint,
+            thresholdSalt_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
   getProposalCount(context: __compactRuntime.CircuitContext<PS>): __compactRuntime.CircuitResults<PS, bigint>;
   getProposalCommitment(context: __compactRuntime.CircuitContext<PS>,
                         id_0: bigint): __compactRuntime.CircuitResults<PS, Uint8Array>;
@@ -40,28 +40,28 @@ export type ImpureCircuits<PS> = {
 }
 
 export type ProvableCircuits<PS> = {
-  depositUnshielded(context: __compactRuntime.CircuitContext<PS>,
-                    color_0: Uint8Array,
-                    amount_0: bigint): __compactRuntime.CircuitResults<PS, []>;
-  proposeWithdrawal(context: __compactRuntime.CircuitContext<PS>,
-                    commitment_0: Uint8Array,
-                    payload_0: Uint8Array,
-                    salt_0: Uint8Array): __compactRuntime.CircuitResults<PS, bigint>;
-  approve(context: __compactRuntime.CircuitContext<PS>,
-          id_0: bigint,
-          salt_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
-  revokeApproval(context: __compactRuntime.CircuitContext<PS>,
-                 id_0: bigint,
-                 salt_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
-  execute(context: __compactRuntime.CircuitContext<PS>,
-          id_0: bigint,
-          recipientIsContract_0: boolean,
-          recipient_0: Uint8Array,
-          color_0: Uint8Array,
-          amount_0: bigint,
-          nonce_0: Uint8Array,
-          threshold_0: bigint,
-          thresholdSalt_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
+  pvDepositUnshielded(context: __compactRuntime.CircuitContext<PS>,
+                      color_0: Uint8Array,
+                      amount_0: bigint): __compactRuntime.CircuitResults<PS, []>;
+  pvProposeWithdrawal(context: __compactRuntime.CircuitContext<PS>,
+                      commitment_0: Uint8Array,
+                      payload_0: Uint8Array,
+                      salt_0: Uint8Array): __compactRuntime.CircuitResults<PS, bigint>;
+  pvApprove(context: __compactRuntime.CircuitContext<PS>,
+            id_0: bigint,
+            salt_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
+  pvRevokeApproval(context: __compactRuntime.CircuitContext<PS>,
+                   id_0: bigint,
+                   salt_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
+  pvExecute(context: __compactRuntime.CircuitContext<PS>,
+            id_0: bigint,
+            recipientIsContract_0: boolean,
+            recipient_0: Uint8Array,
+            color_0: Uint8Array,
+            amount_0: bigint,
+            nonce_0: Uint8Array,
+            threshold_0: bigint,
+            thresholdSalt_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
   getProposalCount(context: __compactRuntime.CircuitContext<PS>): __compactRuntime.CircuitResults<PS, bigint>;
   getProposalCommitment(context: __compactRuntime.CircuitContext<PS>,
                         id_0: bigint): __compactRuntime.CircuitResults<PS, Uint8Array>;
@@ -84,28 +84,28 @@ export type PureCircuits = {
 }
 
 export type Circuits<PS> = {
-  depositUnshielded(context: __compactRuntime.CircuitContext<PS>,
-                    color_0: Uint8Array,
-                    amount_0: bigint): __compactRuntime.CircuitResults<PS, []>;
-  proposeWithdrawal(context: __compactRuntime.CircuitContext<PS>,
-                    commitment_0: Uint8Array,
-                    payload_0: Uint8Array,
-                    salt_0: Uint8Array): __compactRuntime.CircuitResults<PS, bigint>;
-  approve(context: __compactRuntime.CircuitContext<PS>,
-          id_0: bigint,
-          salt_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
-  revokeApproval(context: __compactRuntime.CircuitContext<PS>,
-                 id_0: bigint,
-                 salt_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
-  execute(context: __compactRuntime.CircuitContext<PS>,
-          id_0: bigint,
-          recipientIsContract_0: boolean,
-          recipient_0: Uint8Array,
-          color_0: Uint8Array,
-          amount_0: bigint,
-          nonce_0: Uint8Array,
-          threshold_0: bigint,
-          thresholdSalt_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
+  pvDepositUnshielded(context: __compactRuntime.CircuitContext<PS>,
+                      color_0: Uint8Array,
+                      amount_0: bigint): __compactRuntime.CircuitResults<PS, []>;
+  pvProposeWithdrawal(context: __compactRuntime.CircuitContext<PS>,
+                      commitment_0: Uint8Array,
+                      payload_0: Uint8Array,
+                      salt_0: Uint8Array): __compactRuntime.CircuitResults<PS, bigint>;
+  pvApprove(context: __compactRuntime.CircuitContext<PS>,
+            id_0: bigint,
+            salt_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
+  pvRevokeApproval(context: __compactRuntime.CircuitContext<PS>,
+                   id_0: bigint,
+                   salt_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
+  pvExecute(context: __compactRuntime.CircuitContext<PS>,
+            id_0: bigint,
+            recipientIsContract_0: boolean,
+            recipient_0: Uint8Array,
+            color_0: Uint8Array,
+            amount_0: bigint,
+            nonce_0: Uint8Array,
+            threshold_0: bigint,
+            thresholdSalt_0: Uint8Array): __compactRuntime.CircuitResults<PS, []>;
   signerCommitment(context: __compactRuntime.CircuitContext<PS>,
                    pk_0: Uint8Array,
                    salt_0: Uint8Array): __compactRuntime.CircuitResults<PS, Uint8Array>;

@@ -27,8 +27,10 @@ import java.math.BigInteger
 internal object PrivateVaultContract {
 
     private const val NAME = "private-vault"
-    private const val CONTRACT_JS_ASSET = "runtime/$NAME-contract.js"
-    private const val KEYS_DIR = "keys"
+    // Dedicated asset dirs (synced by the app's syncPrivateVault* Gradle tasks) so the private
+    // vault's keys stay separate from the public vault's plugin-synced runtime/ + keys/.
+    private const val CONTRACT_JS_ASSET = "private-vault-runtime/$NAME-contract.js"
+    private const val KEYS_DIR = "private-vault-keys"
     const val ROSTER_SIZE = 5   // matches PrivateVault.compact's fixed Vector<5>
 
     private fun loadAllVerifierKeys(context: Context): Map<String, ByteArray> {
@@ -109,7 +111,7 @@ internal object PrivateVaultContract {
     ): DeployResult {
         require(signerCoinPublicKeys.size in 1..ROSTER_SIZE) { "1..$ROSTER_SIZE signers" }
         require(threshold in 1..signerCoinPublicKeys.size) { "threshold must be 1..signerCount" }
-        ProvingKeyManager(context).installCircuitKeysFromAssets()
+        ProvingKeyManager(context).installCircuitKeysFromAssets(KEYS_DIR)
 
         val viewingKey = PrivateVaultCrypto.newViewingKey()
         val thresholdSalt = PrivateVaultCrypto.newSalt()
@@ -144,10 +146,10 @@ internal object PrivateVaultContract {
         context: Context, sdk: MidnightSdk, address: String, color: ByteArray, amount: BigInteger,
         onProgress: (suspend (ContractCallStage) -> Unit)? = null,
     ) {
-        ProvingKeyManager(context).installCircuitKeysFromAssets()
+        ProvingKeyManager(context).installCircuitKeysFromAssets(KEYS_DIR)
         val handle = buildHandle(context, sdk, address, forWrite = true, constructorArgs = callConstructorArgs())
         val fundingJson = sdk.buildUnshieldedFundingJson(amount, tokenType = color.toHex())
-        handle.call("depositUnshielded", color, amount, onProgress = onProgress, unshieldedFundingJson = fundingJson)
+        handle.call("pvDepositUnshielded", color, amount, onProgress = onProgress, unshieldedFundingJson = fundingJson)
     }
 
     /**
@@ -161,7 +163,7 @@ internal object PrivateVaultContract {
         viewingKey: ByteArray, memberSalt: ByteArray,
         onProgress: (suspend (ContractCallStage) -> Unit)? = null,
     ) {
-        ProvingKeyManager(context).installCircuitKeysFromAssets()
+        ProvingKeyManager(context).installCircuitKeysFromAssets(KEYS_DIR)
         val handle = buildHandle(context, sdk, address, forWrite = true, constructorArgs = callConstructorArgs())
         val preimage = PrivateVaultCrypto.Preimage(
             recipientIsContract = false, recipient = recipientAddressHash, color = color,
@@ -169,25 +171,25 @@ internal object PrivateVaultContract {
         )
         val commitment = proposalCommitment(handle, preimage)
         val payload = PrivateVaultCrypto.encryptPreimage(viewingKey, preimage)
-        handle.call("proposeWithdrawal", commitment, payload, memberSalt, onProgress = onProgress)
+        handle.call("pvProposeWithdrawal", commitment, payload, memberSalt, onProgress = onProgress)
     }
 
     suspend fun approve(
         context: Context, sdk: MidnightSdk, address: String, proposalId: Long, memberSalt: ByteArray,
         onProgress: (suspend (ContractCallStage) -> Unit)? = null,
     ) {
-        ProvingKeyManager(context).installCircuitKeysFromAssets()
+        ProvingKeyManager(context).installCircuitKeysFromAssets(KEYS_DIR)
         val handle = buildHandle(context, sdk, address, forWrite = true, constructorArgs = callConstructorArgs())
-        handle.call("approve", BigInteger.valueOf(proposalId), memberSalt, onProgress = onProgress)
+        handle.call("pvApprove", BigInteger.valueOf(proposalId), memberSalt, onProgress = onProgress)
     }
 
     suspend fun revokeApproval(
         context: Context, sdk: MidnightSdk, address: String, proposalId: Long, memberSalt: ByteArray,
         onProgress: (suspend (ContractCallStage) -> Unit)? = null,
     ) {
-        ProvingKeyManager(context).installCircuitKeysFromAssets()
+        ProvingKeyManager(context).installCircuitKeysFromAssets(KEYS_DIR)
         val handle = buildHandle(context, sdk, address, forWrite = true, constructorArgs = callConstructorArgs())
-        handle.call("revokeApproval", BigInteger.valueOf(proposalId), memberSalt, onProgress = onProgress)
+        handle.call("pvRevokeApproval", BigInteger.valueOf(proposalId), memberSalt, onProgress = onProgress)
     }
 
     /**
@@ -200,7 +202,7 @@ internal object PrivateVaultContract {
         viewingKey: ByteArray, threshold: Int, thresholdSalt: ByteArray,
         onProgress: (suspend (ContractCallStage) -> Unit)? = null,
     ) {
-        ProvingKeyManager(context).installCircuitKeysFromAssets()
+        ProvingKeyManager(context).installCircuitKeysFromAssets(KEYS_DIR)
         val handle = buildHandle(context, sdk, address, forWrite = true, constructorArgs = callConstructorArgs())
         val payload = readBytes(handle.read("getProposalPayload", BigInteger.valueOf(proposalId)))
         val p = PrivateVaultCrypto.decryptPreimage(viewingKey, payload)
@@ -209,7 +211,7 @@ internal object PrivateVaultContract {
             recipientAddressHash = p.recipient, amount = p.amount, tokenType = p.color.toHex(),
         )
         handle.call(
-            "execute", BigInteger.valueOf(proposalId), p.recipientIsContract, p.recipient, p.color,
+            "pvExecute", BigInteger.valueOf(proposalId), p.recipientIsContract, p.recipient, p.color,
             p.amount, p.nonce, BigInteger.valueOf(threshold.toLong()), thresholdSalt,
             onProgress = onProgress, unshieldedWithdrawalJson = withdrawalJson,
         )

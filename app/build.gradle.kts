@@ -72,6 +72,24 @@ kuiraContract {
     bundleWalletKeys.set(true)
 }
 
+// ─── Private Vault contract assets (second contract) ───────────────
+// The contract plugin syncs ONE contract (the public Vault above). The private
+// sibling is synced by hand into DEDICATED asset dirs so its keys stay separate
+// from the public vault's — its impure circuits are renamed (pv*) so proving
+// keys never collide, and dedicated dirs keep verifier-key loading unambiguous.
+// Source of truth is the committed contract/src/managed/PrivateVault; these
+// asset dirs are generated (gitignored), same model as the plugin's output.
+val syncPrivateVaultRuntime by tasks.registering(Copy::class) {
+    from("../contract/src/managed/PrivateVault/contract/index.js")
+    into(layout.projectDirectory.dir("src/main/assets/private-vault-runtime"))
+    rename { "private-vault-contract.js" }
+}
+val syncPrivateVaultKeys by tasks.registering(Copy::class) {
+    from("../contract/src/managed/PrivateVault/keys")
+    into(layout.projectDirectory.dir("src/main/assets/private-vault-keys"))
+}
+tasks.named("preBuild") { dependsOn(syncPrivateVaultRuntime, syncPrivateVaultKeys) }
+
 dependencies {
     // Kuira SDK — one dep, full graph (Sigil identity, embedded wallet,
     // contract runtime, indexer, design system). See README "Pinned
