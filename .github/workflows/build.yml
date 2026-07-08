@@ -1,16 +1,9 @@
 name: build
 
+# Manual-only until the Kuira SDK 0.1.0-alpha05 this app pins is published to Maven
+# Central — hosted CI has no mavenLocal, so a push-triggered build cannot resolve it.
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-
-# Cancel in-progress runs for the same PR/branch when a new commit lands.
-# Saves CI minutes; the latest commit is the only one that matters.
-concurrency:
-  group: build-${{ github.ref }}
-  cancel-in-progress: true
+  workflow_dispatch:
 
 jobs:
   assemble-debug:
