@@ -152,7 +152,7 @@ not these. (Relevant only if the Vault later issues a share token.)
    deposit circuit). So: **deposits into the Vault work; withdraw-to-user works;
    withdraw-to-another-contract does not yet** (reserved for a future C2C upgrade; the
    `Either<ContractAddress,UserAddress>` storage shape keeps that a verifier-key-only
-   change). This is task #30's answer.
+   change). This is how contract funding works.
 2. **`Initializable` #270** — inline `_isInitialized` per module; never share it.
 3. **No ECDSA** — synchronous external-signature multisig (V2/V3) cannot be made real
    today. Use V1's caller-identity model.
@@ -196,7 +196,7 @@ Vault.compact
 
 1. **Deposit** (permissionless) — `depositUnshielded(color,amount)` →
    `UTreasury__deposit` (`receiveUnshielded`); `depositShielded(coin)` →
-   `STreasury__deposit` (`receiveShielded`). Exercises the #15 `Key::Stack` ops.
+   `STreasury__deposit` (`receiveShielded`). Exercises the `Key::Stack` transcript ops.
 2. **Propose** (signer-only) — `propose(to,color,amount,kind)` →
    `Proposal__createProposal`. `to` built via the `Proposal_*Recipient` helpers.
 3. **Approve** (signer-only, async, one per signer) — accumulate approvals.
@@ -211,12 +211,12 @@ Vault.compact
   pattern instead of public `ownPublicKey()`, if signer privacy is required.
 - `Pausable` emergency stop on deposits/execute; `Allowlist` on proposers.
 
-### First slice (proves the stack on-device, task #28/#30)
+### First slice (proves the stack on-device)
 
 `Vault.compact` with `depositUnshielded` + `getUnshieldedBalance` + the signer
 registry, deployed through the SDK on the 8.0.3 runtime: proves an OZ-composed
-contract runs on our engine (#28) and that contract funding via the receive path
-works (#30) — before layering the full propose/approve/execute governance.
+contract runs on the engine and that contract funding via the receive path
+works — before layering the full propose/approve/execute governance.
 
 ---
 

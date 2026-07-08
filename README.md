@@ -54,11 +54,13 @@ identity + wallet plumbing come from the
 ./gradlew :app:assembleDebug
 ```
 
+> **Heads-up:** this app pins Kuira SDK `0.1.0-alpha05`, which is still rolling
+> out to Maven Central — external builds resolve it once that release lands.
+
 Prerequisites, once:
 
 | What | Where |
 |---|---|
-| Kuira SDK `0.1.0-alpha05` in **mavenLocal** | `./gradlew publishToMavenLocal` in the SDK repo |
 | `applicationId` + `PASSKEY_RP_ID` + hosted `assetlinks.json` | [Bind your app to a passkey domain](https://kuiralabs.github.io/kuira-sdk-android/recipes/bind-your-app-to-a-passkey-domain/) |
 | A localnet (`mn localnet up`) | node `0.22.5`+ — its Compact runtime `0.16.0` matches the compiled contract |
 

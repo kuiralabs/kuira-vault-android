@@ -1,7 +1,7 @@
 pluginManagement {
     repositories {
         // Resolve the Kuira Gradle plugins (contract, localnet) from the
-        // in-progress alpha05 build published to mavenLocal first.
+        // Prefer locally-published SDK builds when present (no-op otherwise).
         mavenLocal()
         google {
             content {
@@ -19,7 +19,7 @@ dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
         // Kuira SDK (dapp-ui + full graph) at the current alpha05 work, taken
-        // from mavenLocal ahead of Maven Central.
+        // Locally-published artifacts resolve ahead of Maven Central when present.
         mavenLocal()
         google()
         mavenCentral()

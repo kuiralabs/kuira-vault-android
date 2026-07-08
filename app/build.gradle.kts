@@ -99,7 +99,7 @@ dependencies {
     ksp(libs.hilt.compiler)
 
     // Instrumented on-chain e2e (VaultDeployE2ETest): deploy the Vault multisig via
-    // the SDK on localnet, then deposit. Exercises the alpha05 SDK from mavenLocal.
+    // the SDK on localnet, then deposit.
     androidTestImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
