@@ -1,0 +1,322 @@
+// SPDX-License-Identifier: Apache-2.0
+// Midnight Private Vault — selective-disclosure multisig treasury (Tier 1)
+
+pragma language_version >= 0.23.0;
+
+// The privacy-first sibling of Vault.compact: same M-of-N governance over
+// unshielded value, opposite disclosure philosophy. The public ledger holds
+// only commitments, ciphertext, statuses, and counts:
+//
+//  - Signer identities: salted commitments H(pk, salt, domain). Each signer's
+//    salt is SECRET (distributed in their invite), so a known public key
+//    cannot be dictionary-tested against the roster — hardening beyond the
+//    OZ ShieldedMultiSig presets, whose single instance salt is public.
+//  - Signer count: the roster is a fixed-size vector, padded with random
+//    dummy commitments; the on-chain shape is identical for 1..MAX signers.
+//  - Threshold: one commitment; execute proves "count >= threshold" against
+//    it without revealing the number. (Each successful execution publicly
+//    bounds threshold <= that proposal's count — documented, accepted.)
+//  - Proposals: a commitment to (recipient, color, amount, nonce) plus an
+//    app-encrypted payload of that preimage (vault viewing key, AES-GCM,
+//    encrypted off-circuit). Members decrypt from chain state; outsiders
+//    hold ciphertext.
+//  - Approvals: per-proposal tags H(pk, salt, id, domain) — deterministic
+//    (double-approve blocked, revoke works) yet unlinkable across proposals
+//    without the signer's own salt. The membership check reads the WHOLE
+//    roster cell and compares in-circuit — no keyed probe, so the transcript
+//    never singles out which roster entry acted. Approval COUNTS stay public
+//    by design.
+//
+// Tier 1 keeps unshielded custody: EXECUTION necessarily reveals recipient
+// and amount in the transaction's unshielded outputs. Hiding the movement
+// itself is Tier 2 (shielded treasury). Full design: docs/private-vault-plan.md.
+
+import CompactStandardLibrary;
+
+import "../oz/multisig/UnshieldedTreasury" prefix Treasury_;
+
+// ─── Types ─────────────────────────────────────────────────────────────────
+
+// Mirrors OZ's ProposalStatus ordinal convention: a leading Inactive variant
+// so default<> is never a live state (and enum ordinal 0 is never "Active").
+export enum PrivateProposalStatus { Inactive, Active, Executed }
+
+struct SignerCommitmentInput {
+  pk: Bytes<32>,
+  salt: Bytes<32>,
+  domain: Bytes<32>
+}
+
+struct ThresholdCommitmentInput {
+  threshold: Uint<8>,
+  salt: Bytes<32>,
+  domain: Bytes<32>
+}
+
+struct ProposalCommitmentInput {
+  recipientIsContract: Boolean,
+  recipient: Bytes<32>,
+  color: Bytes<32>,
+  amount: Uint<128>,
+  nonce: Bytes<32>,
+  domain: Bytes<32>
+}
+
+struct ApprovalTagInput {
+  pk: Bytes<32>,
+  salt: Bytes<32>,
+  id: Uint<64>,
+  domain: Bytes<32>
+}
+
+// ─── State ─────────────────────────────────────────────────────────────────
+
+// Fixed-width committed roster (real signers + random dummy commitments).
+// One cell, always MAX entries: the chain shape leaks nothing about the
+// real count, and membership reads the whole cell (uniform access).
+export ledger _signerRoster: Vector<5, Bytes<32>>;
+
+export ledger _thresholdCommitment: Bytes<32>;
+
+export ledger _nextProposalId: Counter;
+export ledger _proposalCommitment: Map<Uint<64>, Bytes<32>>;
+// AES-GCM ciphertext of the proposal preimage, encrypted app-side under the
+// vault viewing key. Fixed plaintext layout → fixed ciphertext width.
+export ledger _proposalPayload: Map<Uint<64>, Bytes<160>>;
+export ledger _proposalStatus: Map<Uint<64>, PrivateProposalStatus>;
+
+export ledger _approvalTags: Map<Uint<64>, Set<Bytes<32>>>;
+export ledger _approvalCount: Map<Uint<64>, Uint<8>>;
+
+// ─── Constructor ───────────────────────────────────────────────────────────
+
+// The deployer computes all commitments off-chain: real signers as
+// H(pk, secretSalt, domain), unused slots as random 32-byte values (no known
+// preimage — vanishingly unlikely to ever match a membership recomputation).
+// A zero commitment is rejected in every slot: zero is the obvious "empty"
+// tell, and a zero threshold commitment would have no preimage gate at all.
+constructor(
+  signerCommitments: Vector<5, Bytes<32>>,
+  thresholdCommitment: Bytes<32>
+) {
+  for (const c of signerCommitments) {
+    assert(c != default<Bytes<32>>, "PrivateVault: zero signer commitment");
+  }
+  assert(thresholdCommitment != default<Bytes<32>>, "PrivateVault: zero threshold commitment");
+  _signerRoster = disclose(signerCommitments);
+  _thresholdCommitment = disclose(thresholdCommitment);
+}
+
+// ─── Deposit (permissionless) ──────────────────────────────────────────────
+
+export circuit depositUnshielded(color: Bytes<32>, amount: Uint<128>): [] {
+  Treasury__deposit(color, amount);
+}
+
+// ─── Proposal lifecycle ────────────────────────────────────────────────────
+
+// The proposer supplies the commitment + ciphertext computed app-side; the
+// circuit gates on roster membership (via the proposer's secret salt) and
+// stores both. The salt and the proposal's plaintext never touch the
+// transcript — on-chain, a proposal is an opaque pair.
+export circuit proposeWithdrawal(
+  commitment: Bytes<32>,
+  payload: Bytes<160>,
+  salt: Bytes<32>
+): Uint<64> {
+  assertSigner(salt);
+  assert(commitment != default<Bytes<32>>, "PrivateVault: zero proposal commitment");
+
+  const id = _nextProposalId as Uint<64>;
+  _nextProposalId.increment(1);
+
+  _proposalCommitment.insert(disclose(id), disclose(commitment));
+  _proposalPayload.insert(disclose(id), disclose(payload));
+  _proposalStatus.insert(disclose(id), PrivateProposalStatus.Active);
+  _approvalTags.insert(disclose(id), default<Set<Bytes<32>>>);
+  _approvalCount.insert(disclose(id), 0);
+  return id;
+}
+
+export circuit approve(id: Uint<64>, salt: Bytes<32>): [] {
+  assertProposalActive(id);
+  assertSigner(salt);
+
+  const tag = approvalTag(id, salt);
+  assert(!_approvalTags.lookup(disclose(id)).member(disclose(tag)), "PrivateVault: already approved");
+  _approvalTags.lookup(disclose(id)).insert(disclose(tag));
+
+  const newCount = _approvalCount.lookup(disclose(id)) + 1 as Uint<8>;
+  _approvalCount.insert(disclose(id), disclose(newCount));
+}
+
+export circuit revokeApproval(id: Uint<64>, salt: Bytes<32>): [] {
+  assertProposalActive(id);
+  assertSigner(salt);
+
+  const tag = approvalTag(id, salt);
+  assert(_approvalTags.lookup(disclose(id)).member(disclose(tag)), "PrivateVault: not approved");
+  _approvalTags.lookup(disclose(id)).remove(disclose(tag));
+
+  const newCount = _approvalCount.lookup(disclose(id)) - 1 as Uint<8>;
+  _approvalCount.insert(disclose(id), disclose(newCount));
+}
+
+// Knowledge-gated rather than identity-gated: the executor presents the
+// proposal preimage and the threshold preimage — material only members (and
+// granted auditors) hold. No signer check: as in the public Vault, the
+// approvals are the authorization; here the viewing material is the capability.
+// The send necessarily discloses recipient/color/amount into the transaction's
+// unshielded outputs (Tier 1 boundary — see the header).
+export circuit execute(
+  id: Uint<64>,
+  recipientIsContract: Boolean,
+  recipient: Bytes<32>,
+  color: Bytes<32>,
+  amount: Uint<128>,
+  nonce: Bytes<32>,
+  threshold: Uint<8>,
+  thresholdSalt: Bytes<32>
+): [] {
+  assertProposalActive(id);
+
+  // The presented preimage must match the stored proposal commitment.
+  const expected = proposalCommitment(recipientIsContract, recipient, color, amount, nonce);
+  assert(
+    _proposalCommitment.lookup(disclose(id)) == expected,
+    "PrivateVault: preimage does not match proposal"
+  );
+
+  // The presented threshold must match the deploy-time commitment, and the
+  // public approval count must meet it. A threshold below 1 can never have
+  // been legitimately committed.
+  assert(threshold >= 1, "PrivateVault: threshold below one");
+  assert(
+    thresholdCommitment(threshold, thresholdSalt) == _thresholdCommitment,
+    "PrivateVault: threshold preimage mismatch"
+  );
+  assert(
+    _approvalCount.lookup(disclose(id)) >= threshold,
+    "PrivateVault: approvals below threshold"
+  );
+
+  if (disclose(recipientIsContract)) {
+    Treasury__send(
+      left<ContractAddress, UserAddress>(ContractAddress { bytes: disclose(recipient) }),
+      disclose(color),
+      disclose(amount)
+    );
+  } else {
+    Treasury__send(
+      right<ContractAddress, UserAddress>(UserAddress { bytes: disclose(recipient) }),
+      disclose(color),
+      disclose(amount)
+    );
+  }
+
+  _proposalStatus.insert(disclose(id), PrivateProposalStatus.Executed);
+}
+
+// ─── Membership + commitments ──────────────────────────────────────────────
+
+// Reads the WHOLE roster cell and compares in-circuit: every caller touches
+// the same state the same way, so the transcript never reveals which slot
+// (if any) matched. The salt is a private argument — never disclosed.
+circuit assertSigner(salt: Bytes<32>): [] {
+  const me = signerCommitment(ownPublicKey().bytes, salt);
+  const roster = _signerRoster;
+  const found = roster[0] == me
+    || roster[1] == me
+    || roster[2] == me
+    || roster[3] == me
+    || roster[4] == me;
+  assert(found, "PrivateVault: not a signer");
+}
+
+circuit approvalTag(id: Uint<64>, salt: Bytes<32>): Bytes<32> {
+  return persistentHash<ApprovalTagInput>(ApprovalTagInput {
+    pk: ownPublicKey().bytes,
+    salt: salt,
+    id: id,
+    domain: pad(32, "pvault:approval:")
+  });
+}
+
+// ─── Pure commitment helpers (shared with the app, callable off-chain) ─────
+
+export pure circuit signerCommitment(pk: Bytes<32>, salt: Bytes<32>): Bytes<32> {
+  return persistentHash<SignerCommitmentInput>(SignerCommitmentInput {
+    pk: pk,
+    salt: salt,
+    domain: pad(32, "pvault:signer:")
+  });
+}
+
+export pure circuit thresholdCommitment(threshold: Uint<8>, salt: Bytes<32>): Bytes<32> {
+  return persistentHash<ThresholdCommitmentInput>(ThresholdCommitmentInput {
+    threshold: threshold,
+    salt: salt,
+    domain: pad(32, "pvault:threshold:")
+  });
+}
+
+export pure circuit proposalCommitment(
+  recipientIsContract: Boolean,
+  recipient: Bytes<32>,
+  color: Bytes<32>,
+  amount: Uint<128>,
+  nonce: Bytes<32>
+): Bytes<32> {
+  return persistentHash<ProposalCommitmentInput>(ProposalCommitmentInput {
+    recipientIsContract: recipientIsContract,
+    recipient: recipient,
+    color: color,
+    amount: amount,
+    nonce: nonce,
+    domain: pad(32, "pvault:proposal:")
+  });
+}
+
+// ─── Guards + views ────────────────────────────────────────────────────────
+
+circuit assertProposalActive(id: Uint<64>): [] {
+  assert(_proposalStatus.member(disclose(id)), "PrivateVault: proposal not found");
+  assert(
+    _proposalStatus.lookup(disclose(id)) == PrivateProposalStatus.Active,
+    "PrivateVault: proposal not active"
+  );
+}
+
+export circuit getProposalCount(): Uint<64> {
+  return _nextProposalId as Uint<64>;
+}
+
+export circuit getProposalCommitment(id: Uint<64>): Bytes<32> {
+  assert(_proposalCommitment.member(disclose(id)), "PrivateVault: proposal not found");
+  return _proposalCommitment.lookup(disclose(id));
+}
+
+export circuit getProposalPayload(id: Uint<64>): Bytes<160> {
+  assert(_proposalPayload.member(disclose(id)), "PrivateVault: proposal not found");
+  return _proposalPayload.lookup(disclose(id));
+}
+
+export circuit getProposalStatus(id: Uint<64>): PrivateProposalStatus {
+  assert(_proposalStatus.member(disclose(id)), "PrivateVault: proposal not found");
+  return _proposalStatus.lookup(disclose(id));
+}
+
+export circuit getApprovalCount(id: Uint<64>): Uint<8> {
+  if (!_approvalCount.member(disclose(id))) {
+    return 0;
+  }
+  return _approvalCount.lookup(disclose(id));
+}
+
+export circuit getUnshieldedBalance(color: Bytes<32>): Uint<128> {
+  return Treasury_getTokenBalance(color);
+}
+
+export circuit getThresholdCommitment(): Bytes<32> {
+  return _thresholdCommitment;
+}

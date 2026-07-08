@@ -1,0 +1,90 @@
+// SPDX-License-Identifier: Apache-2.0
+// DELIBERATELY VULNERABLE — reproduces the naive privacy mistakes so the
+// security suite can prove each exploit lands here and dies against
+// PrivateVault.compact. NEVER deploy. See docs/security/PRIVACY_REGISTRY.md.
+//
+// Each weakness is the "obvious" thing a developer would write:
+//  - V-02: a single PUBLIC instance salt stored on-chain (the OZ preset model).
+//          With the salt public and the domain a known constant, anyone can
+//          dictionary-test a suspected public key against the roster.
+//  - V-03: proposal recipient + amount disclose()d into plaintext ledger maps.
+//  - V-04: approval tag = H(pk, id) with NO secret salt, so a known public key
+//          produces a recomputable tag that links a signer's votes across
+//          proposals.
+
+pragma language_version >= 0.23.0;
+
+import CompactStandardLibrary;
+
+struct VulnSignerInput { pk: Bytes<32>, salt: Bytes<32>, domain: Bytes<32> }
+struct VulnApprovalInput { pk: Bytes<32>, id: Uint<64>, domain: Bytes<32> }
+
+// V-02: the salt is on the ledger, in the open.
+export ledger _instanceSalt: Bytes<32>;
+export ledger _signerRoster: Vector<3, Bytes<32>>;
+
+export ledger _nextProposalId: Counter;
+// V-03: recipient + amount stored in cleartext, keyed by id.
+export ledger _proposalRecipient: Map<Uint<64>, Bytes<32>>;
+export ledger _proposalAmount: Map<Uint<64>, Uint<128>>;
+
+export ledger _approvalTags: Map<Uint<64>, Set<Bytes<32>>>;
+export ledger _approvalCount: Map<Uint<64>, Uint<8>>;
+
+constructor(instanceSalt: Bytes<32>, signerRoster: Vector<3, Bytes<32>>) {
+  _instanceSalt = disclose(instanceSalt);
+  _signerRoster = disclose(signerRoster);
+}
+
+// V-03: the proposer's recipient and amount are disclosed straight to state.
+export circuit proposeWithdrawal(recipient: Bytes<32>, amount: Uint<128>): Uint<64> {
+  assertSigner();
+  const id = _nextProposalId as Uint<64>;
+  _nextProposalId.increment(1);
+  _proposalRecipient.insert(disclose(id), disclose(recipient));
+  _proposalAmount.insert(disclose(id), disclose(amount));
+  _approvalTags.insert(disclose(id), default<Set<Bytes<32>>>);
+  _approvalCount.insert(disclose(id), 0);
+  return id;
+}
+
+// V-04: tag is H(pk, id) — no secret salt, so it is recomputable from a
+// suspected public key and links that signer's approvals across proposals.
+export circuit approve(id: Uint<64>): [] {
+  assertSigner();
+  const tag = vulnApprovalTag(ownPublicKey().bytes, id);
+  assert(!_approvalTags.lookup(disclose(id)).member(disclose(tag)), "already approved");
+  _approvalTags.lookup(disclose(id)).insert(disclose(tag));
+  const n = _approvalCount.lookup(disclose(id)) + 1 as Uint<8>;
+  _approvalCount.insert(disclose(id), disclose(n));
+}
+
+// V-02: membership recomputes with the PUBLIC salt — the same computation an
+// attacker can run offline against any candidate key.
+circuit assertSigner(): [] {
+  const me = vulnSignerCommitment(ownPublicKey().bytes, _instanceSalt);
+  const roster = _signerRoster;
+  const found = roster[0] == me || roster[1] == me || roster[2] == me;
+  assert(found, "not a signer");
+}
+
+// The attacker runs exactly these pure circuits offline.
+export pure circuit vulnSignerCommitment(pk: Bytes<32>, salt: Bytes<32>): Bytes<32> {
+  return persistentHash<VulnSignerInput>(VulnSignerInput {
+    pk: pk, salt: salt, domain: pad(32, "vuln:signer:")
+  });
+}
+
+export pure circuit vulnApprovalTag(pk: Bytes<32>, id: Uint<64>): Bytes<32> {
+  return persistentHash<VulnApprovalInput>(VulnApprovalInput {
+    pk: pk, id: id, domain: pad(32, "vuln:approval:")
+  });
+}
+
+export circuit getInstanceSalt(): Bytes<32> { return _instanceSalt; }
+export circuit getProposalRecipient(id: Uint<64>): Bytes<32> {
+  return _proposalRecipient.lookup(disclose(id));
+}
+export circuit getProposalAmount(id: Uint<64>): Uint<128> {
+  return _proposalAmount.lookup(disclose(id));
+}

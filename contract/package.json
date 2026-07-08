@@ -3,12 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Midnight Vault — unshielded multisig treasury (Compact). Compiled artifacts under src/managed/Vault/ are consumed by the Android app via the io.github.kuiralabs.contract Gradle plugin; the simulator suite under test/ exercises the contract logic off-chain.",
+  "description": "Midnight Vault \u2014 unshielded multisig treasury (Compact). Compiled artifacts under src/managed/Vault/ are consumed by the Android app via the io.github.kuiralabs.contract Gradle plugin; the simulator suite under test/ exercises the contract logic off-chain.",
   "scripts": {
-    "compile": "compact compile +0.31.1 src/Vault.compact src/managed/Vault",
+    "compile": "compact compile +0.31.1 src/Vault.compact src/managed/Vault && compact compile +0.31.1 src/PrivateVault.compact src/managed/PrivateVault && compact compile +0.31.1 src/PrivateVaultVulnerable.compact src/managed/PrivateVaultVulnerable",
     "compile:fast": "SKIP_ZK=true compact compile +0.31.1 src/Vault.compact src/managed/Vault",
     "inspect": "mn contract inspect --managed src/managed/Vault",
-    "pretest": "SKIP_ZK=true compact compile +0.31.1 src/Vault.compact src/managed/Vault",
+    "pretest": "SKIP_ZK=true compact compile +0.31.1 src/Vault.compact src/managed/Vault && SKIP_ZK=true compact compile +0.31.1 src/PrivateVault.compact src/managed/PrivateVault && SKIP_ZK=true compact compile +0.31.1 src/PrivateVaultVulnerable.compact src/managed/PrivateVaultVulnerable",
     "test": "vitest run",
     "test:cov": "vitest run --coverage"
   },
