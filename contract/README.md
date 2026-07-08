@@ -1,7 +1,9 @@
 # Vault contract
 
 An M-of-N multisig treasury in Compact, composed from the vendored
-OpenZeppelin modules (`../oz/multisig/`):
+[OpenZeppelin Compact Contracts](https://github.com/OpenZeppelin/compact-contracts)
+multisig modules (`../oz/multisig/`, MIT, pinned at `v0.3.0-alpha` — see
+[`../oz/UPSTREAM.md`](../oz/UPSTREAM.md)):
 
 ```compact
 // Vault.compact (excerpt) — the composition

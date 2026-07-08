@@ -275,6 +275,22 @@ into the same account or forge a new sigil on the second device.
 
 ---
 
+## Acknowledgements
+
+The multisig modules the Vault composes (`SignerManager`, `ProposalManager`,
+`UnshieldedTreasury`) come from
+**[OpenZeppelin Compact Contracts](https://github.com/OpenZeppelin/compact-contracts)**
+(MIT), vendored at `v0.3.0-alpha` under [`contract/oz/`](contract/oz/) with
+their license and audit reports intact — see
+[`contract/oz/UPSTREAM.md`](contract/oz/UPSTREAM.md) for the exact pin and the
+local modifications (notably the `unshieldedBalance*` u64 workaround). Thank
+you to the OpenZeppelin team for building the Compact library this Vault
+stands on.
+
+---
+
 ## License
 
-Apache 2.0 — see [LICENSE](LICENSE).
+Apache 2.0 — see [LICENSE](LICENSE). The vendored OpenZeppelin Compact
+contracts under `contract/oz/` remain MIT — see
+[`contract/oz/LICENSE`](contract/oz/LICENSE).
