@@ -12,7 +12,7 @@ import javax.inject.Singleton
  * Which Vault this device is pointed at, per network. Only the address is essential — everything
  * else (threshold, balance, proposals) is read from chain, so a device that CONNECTS to a Vault it
  * didn't deploy sees the same truth. The threshold is cached for an instant first paint before the
- * chain read lands. Encrypted at rest, same pattern as [ContractAddressStore].
+ * chain read lands. Encrypted at rest (EncryptedSharedPreferences, consistent with the SDK's stores).
  */
 @Singleton
 class VaultStore @Inject constructor(

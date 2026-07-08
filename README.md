@@ -1,17 +1,15 @@
-# Kuira Starter — Android
+# Kuira Vault — Android
 
-Minimum reproducible Kuira Android dApp. Sigil identity + embedded
-wallet + a counter Compact contract — clone, set your `applicationId`
-and `rpId`, host `assetlinks.json`, hit Run.
+A multisig confidential treasury on Midnight, as an Android dApp. Sigil
+identity + embedded wallet + an OpenZeppelin-composed **M-of-N Vault**
+contract: deposit NIGHT into a shared treasury, propose a withdrawal,
+collect approvals from distinct signer wallets, execute — with every
+balance, proposal, and approval read live from chain, so a co-signer
+device that connects to an existing Vault sees the same truth as the
+deployer.
 
-[![build](https://github.com/kuiralabs/kuira-starter-android/actions/workflows/build.yml/badge.svg)](https://github.com/kuiralabs/kuira-starter-android/actions/workflows/build.yml)
-
-This repository is also a GitHub template — click **Use this template**
-on the repo page to spin up your own dApp without forking.
-
-<p align="center">
-  <img src="docs/screenshot.png" alt="Kuira Starter counter dApp on-device — sigil identity pill, wallet balance pill, and the on-chain counter with an Increment button" width="300">
-</p>
+Built on the Kuira starter (identity + wallet plumbing unchanged); the
+contract and UI are the Vault.
 
 ---
 
@@ -22,37 +20,46 @@ on the repo page to spin up your own dApp without forking.
   passkey-PRF DID + wallet seed) and a **wallet** chip (NIGHT + DUST balance,
   receive-QR, dust registration, the network picker, and settings). Tap a chip to
   expand its sheet; drag it to dock at a screen edge.
-- **Contract** — a 6-line counter in Compact (`contract/src/counter.compact`).
-  Deploy on first run, increment with a single circuit call, and read state
-  **reactively** via `MidnightContract.observeLedger()` — the count updates on
-  each on-chain change, no polling. Deploy a fresh counter or disconnect from the
-  card; switch the wallet chip's network and the counter follows it. Compiled
-  artifacts are committed so the app builds out-of-box.
-
-The whole demo is intentionally small (~700 LOC Kotlin code + ~6 lines
-Compact, plus inline comments) so you can read every file in a single
-sitting.
+- **Contract** — `contract/src/Vault.compact`, composed from the vendored
+  OpenZeppelin Compact multisig modules (`SignerManager` + `ProposalManager` +
+  `UnshieldedTreasury`, `contract/oz/`). Five actions: permissionless
+  `depositUnshielded`, signer-gated `proposeWithdrawal` / `approve` /
+  `revokeApproval`, and threshold-gated permissionless `execute` (the approvals
+  are the authorization, not the executor's identity). Deposits fund the
+  contract with real wallet UTXOs; execute pays the recipient with a real UTXO —
+  the full unshielded money path in both directions.
+- **Multi-device multisig** — deploy a 3-signer Vault (threshold 1–3) with
+  co-signer public keys, share the vault address, and a second device
+  **Connects** to it: threshold, treasury balance, proposals, per-signer
+  approval state, and signer membership are all read from chain via
+  `MidnightContract.read()` (view-circuit calls — no local tracking). Approvals
+  update live as other signers act.
+- **Guided governance UI** — each proposal is a card with a plain-words status
+  (`Awaiting approvals` / `Ready to execute` / `✓ Completed`), the recipient as
+  a real wallet address (flagged when it's yours), absolute approval counts,
+  and exactly the action that's valid next.
 
 ---
 
 ## Quick start
 
 ```bash
-git clone https://github.com/kuiralabs/kuira-starter-android.git my-dapp
-cd my-dapp
 ./gradlew :app:assembleDebug                # 5 to 7 minutes on a cold cache
 ```
 
 Open in Android Studio. To actually run on a device, complete the four
 **Before you run** items below.
 
+The app consumes the Kuira SDK `0.1.0-alpha05` from **mavenLocal** —
+publish it from the SDK repo first (`./gradlew publishToMavenLocal`).
+
 ---
 
 ## Before you run
 
-The starter ships with four prep steps that you MUST complete before
-the Sigil-forge path will succeed on a device. The first three are
-single-string edits; the fourth is a terminal command:
+Four prep steps before the Sigil-forge path will succeed on a device.
+The first three are single-string edits; the fourth is a terminal
+command:
 
 | What | Where | Currently |
 |---|---|---|
@@ -77,12 +84,11 @@ deploy until both are present.
 
 **On localnet (`MidnightNetwork.UNDEPLOYED`):**
 
-> **Node version matters.** This starter is tested against
-> **`midnight-node:0.22.5`** — the `mn localnet` default — which ships
-> on-chain Compact runtime **0.16.0**, the runtime the bundled `counter`
-> contract is compiled for. On an older node (`≤ 0.22.3`, runtime
-> `0.15.0`), **Deploy counter** fails with a runtime-version mismatch.
-> Stick with the default (`0.22.5`) and you're fine.
+> **Node version matters.** The Vault contract is compiled with
+> `compactc 0.31.1` against Compact runtime **0.16.0** — the runtime the
+> `mn localnet` default node ships. On an older node the deploy fails
+> with a runtime-version mismatch. Stick with the default and you're
+> fine.
 
 1. Open the app, tap **Forge sigil** in the panel.
 2. After forge, copy the wallet address from `WalletStatusPanel`.
@@ -94,7 +100,8 @@ deploy until both are present.
    from that NIGHT. Do this **in-app** — the CLI's `mn dust register` takes a
    *named* wallet from `mn wallet generate`, so it can't target the app's
    embedded wallet address.
-5. Wait ~30 seconds for DUST to appear, then tap **Deploy counter** → **Increment**.
+5. Wait ~30 seconds for DUST to appear, then run the flow: **Deploy Vault** →
+   **Deposit** → **Propose** → **Approve** → **Execute withdrawal**.
 
 **On PREPROD:** use the public faucet (link via the wallet panel's
 copy-address button) instead of `mn airdrop`, then tap **Register dust** in
@@ -102,12 +109,29 @@ the wallet panel — the same in-app step as localnet.
 
 ---
 
+## Running the multisig across two devices
+
+1. **Device B** (co-signer): forge a sigil, fund the wallet, then copy **your
+   signer key** from the deploy card and send it to device A.
+2. **Device A** (deployer): paste B's key as a co-signer, pick the threshold,
+   **Deploy** — then **Copy vault address** and send it to B.
+3. **Device B**: paste the address into **Connect to an existing Vault** — it
+   reads the Vault's state from chain and can approve as a signer.
+
+One identity caveat: two devices signed into the **same Google account** share
+a sigil (same seed → same key → the *same signer*), so a real M-of-N needs
+devices on different accounts.
+
+---
+
 ## Project layout
 
 ```
 contract/                                 ← the on-chain piece
-  src/counter.compact                       Compact source (6 lines + comments)
-  src/managed/counter/                      compiled artifacts (committed)
+  src/Vault.compact                         the multisig treasury (OZ-composed)
+  src/managed/Vault/                        compiled artifacts (committed)
+  oz/                                       vendored OpenZeppelin Compact modules
+  test/                                     simulator unit tests (vitest)
   package.json                              pins compactc + runtime versions
   README.md                                 rebuild + verify recipe
 
@@ -117,12 +141,15 @@ app/                                      ← the Android app
     KuiraStarterApp.kt                      @HiltAndroidApp
     MainActivity.kt                         AppCompatActivity + Compose
     di/PasskeyConfigModule.kt               Passkey rpId binding
-    data/CounterContract.kt                 MidnightContract wrapper
-    data/ContractAddressStore.kt            EncryptedSharedPreferences per network
-    ui/CounterScreen.kt                     floating PanelBar overlay + CounterCard
-    ui/CounterCard.kt                       deploy / increment / deploy-new / disconnect
-    ui/CounterViewModel.kt                  state machine + reactive count stream (observeLedger)
-    ui/CounterUiState.kt                    sealed interface
+    data/VaultContract.kt                   MidnightContract wrapper (actions + chain reads)
+    data/VaultStore.kt                      which Vault this device points at, per network
+    ui/VaultScreen.kt                       floating PanelBar overlay + VaultCard
+    ui/VaultCard.kt                         deploy / connect / deposit / propose / approve / execute
+    ui/VaultViewModel.kt                    chain-truth state machine + live approval stream
+    ui/VaultUiState.kt                      sealed interface + ProposalView
+  src/androidTest/.../VaultDeployE2ETest.kt on-chain e2e (3 wallets, full 2-of-3 governance)
+
+fund-vault-e2e.sh                         ← host harness: funds fresh e2e wallets via mn
 ```
 
 ---
@@ -131,14 +158,14 @@ app/                                      ← the Android app
 
 | Layer | Version |
 |---|---|
-| Kuira SDK | `0.1.0-alpha04` (Maven Central) |
+| Kuira SDK | `0.1.0-alpha05` (mavenLocal) |
 | AGP | `8.13.2` |
 | Kotlin | `2.3.20` |
 | KSP | `2.3.6` |
 | Hilt | `2.58` |
 | Compose BOM | `2026.03.01` |
 | JDK | `17` |
-| `compactc` | `0.31.0` |
+| `compactc` | `0.31.1` |
 | Compact language pragma | `0.23.0` |
 | `@midnight-ntwrk/compact-runtime` | `0.16.0` |
 
@@ -149,15 +176,12 @@ The Compact toolchain triple moves independently. See
 
 ## Known limitations today
 
-These are gaps the SDK itself doesn't close yet — the starter works
-around them visibly so consumers see the pattern and can swap in the
-SDK-native path when it lands.
-
-| Gap | Workaround in the starter | Closes when |
+| Gap | Workaround here | Closes when |
 |---|---|---|
-| **No in-app airdrop / faucet button.** | Funding is a terminal step (`mn airdrop ... --network undeployed`). | The SDK ships an in-app airdrop helper for localnet, or upstream tooling subsumes the step. |
-| **`androidx.security:security-crypto` is deprecated by Google industry-wide.** | Starter uses it for `ContractAddressStore` because the consensus migration target (Tink-backed DataStore) is still moving. Compile-time warnings are expected. | Google's recommended replacement stabilises. |
-| **`SigilStatusPanel` defaults to a passkey rpId at compile time.** | Build will succeed with `REPLACE_ME_WITH_YOUR_DOMAIN.example`, but Forge will hit `RP_ID_MISMATCH` on a real device until the rpId points at a real domain whose `assetlinks.json` lists this app. | A preflight Gradle task catches this at build time. |
+| **The proposer isn't shown.** The on-chain `Proposal` struct doesn't record who proposed. | The UI shows recipient + amount + approvals only. | `Vault.compact` gains a proposer map written in `proposeWithdrawal` (contract change + redeploy). |
+| **`unshieldedBalance*` builtins compare as u64** (upstream Midnight toolchain bug — reported, with a public minimal repro at [nel349/unshielded-balance-u64-repro](https://github.com/nel349/unshielded-balance-u64-repro)). | The vendored `UnshieldedTreasury` guards via its own `_balances` map instead. | The upstream fix lands and the vendored module reverts to the builtins. |
+| **No in-app airdrop / faucet button.** | Funding is a terminal step (`mn airdrop … --network undeployed`). | The SDK ships an in-app airdrop helper for localnet. |
+| **`androidx.security:security-crypto` is deprecated by Google industry-wide.** | Used for `VaultStore`; compile-time warnings are expected. | Google's recommended replacement stabilises. |
 
 ---
 
@@ -183,23 +207,25 @@ Checklist:
 4. **Uninstall + reinstall the app** after the assetlinks file lands;
    `adb install -r` doesn't refresh passkey state on some devices.
 
-Full walkthrough — keystore generation, release-signing config,
-multi-fingerprint assetlinks.json, hosting on GitHub Pages / Vercel /
-Cloudflare:
-[Bind your app to a passkey domain](https://kuiralabs.github.io/kuira-sdk-android/recipes/bind-your-app-to-a-passkey-domain/).
-
 **Q: Deploy hangs at "Balancing".**
 A: The wallet has zero DUST. Tap **Register dust** in the wallet panel, then
 wait ~30 seconds and retry deploy. (Register in-app, not via CLI — `mn dust
 register` needs a named `mn wallet generate` wallet and can't target the app's
 embedded address.)
 
-**Q: The count never updates after Increment.**
-A: `CounterViewModel` collects `MidnightContract.observeLedger()`, which
-refreshes on each new block — the tx itself takes one block to land (~3s
-localnet, ~6s PREPROD). If the count is still stale after ~30s, check
-`adb logcat | grep -i counter` for indexer connection errors — the indexer
-URL in `WalletConfig` may not be reachable.
+**Q: The balance or approvals don't update after an action.**
+A: The Vault re-reads chain state after every action and on each on-chain
+change (the ledger stream). A tx takes one block to land (~3s localnet, ~6s
+PREPROD), and a freshly-deployed contract takes a beat to be indexed — the app
+retries through that window. If it's still stale after ~60s, check
+`adb logcat | grep VaultViewModel` for read errors — the indexer URL may not
+be reachable.
+
+**Q: Sends fail with `Custom error: 171` after a localnet reset.**
+A: A network reset gives a fresh chain, but the wallet's on-device dust/UTXO
+caches still hold the dead chain's state. Clear the app's data (or wipe the
+SDK's dust + UTXO stores) and re-fund. Automatic invalidation on chain reset
+is a tracked SDK item.
 
 **Q: `mn localnet up` fails on Windows with `spawnSync ... cmd.exe ETIMEDOUT`.**
 A: A known `mn`-on-Windows issue. Start the stack directly instead:
@@ -211,20 +237,19 @@ docker compose -f ~/.midnight/localnet/compose.yml up -d
 A: Two setup notes:
 - **Physical device:** forward the localnet ports to the phone —
   `adb reverse tcp:9944 tcp:9944`, `adb reverse tcp:8088 tcp:8088`,
-  `adb reverse tcp:6300 tcp:6300`. A SIM-less phone has no "Install via USB";
-  `adb push` the APK and open it manually.
+  `adb reverse tcp:6300 tcp:6300`.
 - **x86_64 emulator:** works on SDK `alpha04+` (the native lib ships an x86_64
-  `.so`). On `alpha03` and earlier the lib was arm64-only, so x86_64 emulators
-  couldn't load it — use a physical device or an arm64 emulator there.
+  `.so`).
 
 **Q: Build fails with `Manifest merger failed: minSdkVersion 28 cannot
 be smaller than version 30`.**
-A: You've downgraded `minSdk` in `app/build.gradle.kts`. The SDK
-requires minSdk 30 (Block Store + CredentialManager). Don't.
+A: The SDK requires minSdk 30 (Block Store + CredentialManager). Don't
+downgrade it.
 
 **Q: Build fails with `language version X.Y.Z mismatch`.**
 A: You upgraded `compactc` or edited `pragma language_version` without
-matching the other. See [`contract/README.md` § When `compactc` bumps](contract/README.md#when-compactc-bumps).
+matching the other. See [`contract/README.md` § When the Compact toolchain
+bumps](contract/README.md#when-the-compact-toolchain-bumps).
 
 **Q: Sigil restore on a fresh device doesn't see the previous wallet.**
 A: Block Store binds the backup to the Google Play Services account on
@@ -234,42 +259,19 @@ into the same account or forge a new sigil on the second device.
 
 ---
 
-## "Test of fire" log
+## Tests
 
-The first cut of the Kuira SDK docs was tested by treating a
-blank-context engineer as the consumer — building a starter from zero
-using only the live website. Three doc bugs surfaced and were fixed
-before this template was cut:
-
-| Friction | Root cause | Where fixed |
-|---|---|---|
-| KSP version `2.3.20-2.0.4` not found | Recipe 1 quoted a version that doesn't exist on Maven Central. | Recipe 1 now shows `2.3.6` matching the SDK's actual pin. |
-| `PasskeyConfig` unresolved import | Recipe 1 referenced `com.midnight.kuira.core.identity.PasskeyConfig` but the actual package is `…identity.passkey.PasskeyConfig`. | Recipe 1 import path corrected. |
-| `SigilStatusPanel(activity = activity)` — no such parameter | Recipe 2 invented an API that doesn't exist on the real composable. | Recipe 2 now shows the actual signature (no `activity`; `MainActivity` extends `AppCompatActivity` so the panel finds a `FragmentActivity` host on its own). |
-
-This starter is, in effect, the canonical answer to "does the
-documentation actually let a stranger build a working dApp." If you hit
-a friction the docs don't anticipate, file an issue against
-[kuiralabs/kuira-sdk-android](https://github.com/kuiralabs/kuira-sdk-android/issues)
-— the cookbook is the source of truth for both humans and agents and
-the right place to fix the documentation gap.
-
----
-
-## Roadmap
-
-What's missing in the starter today is missing because the SDK doesn't
-yet expose it. As the SDK closes each gap, the starter absorbs the new
-API at the next pin bump.
-
-- **Preflight Gradle task** — would catch placeholder rpId,
-  unreachable `assetlinks.json`, and Compact runtime mismatches at
-  build time instead of as runtime exceptions.
-- **Localnet in-app airdrop** — `BuildConfig.DEBUG`-gated fund button
-  so the starter doesn't have to send users to a terminal.
-
-Track these and other gaps at
-[kuiralabs/kuira-sdk-android/issues](https://github.com/kuiralabs/kuira-sdk-android/issues).
+- **Contract simulator** (no chain): `cd contract && npm test` — the multisig
+  accounting (signers, thresholds, proposal lifecycle) against the OZ
+  dry-run simulator.
+- **On-chain e2e** (localnet + one emulator):
+  ```bash
+  VAULT_E2E_CLASS="com.kuiralabs.starter.counter.VaultDeployE2ETest#governance_full_flow_2of3" \
+    ./fund-vault-e2e.sh
+  ```
+  Three fresh wallets deploy a 2-of-3 Vault, deposit, propose, approve to
+  threshold, and execute the withdrawal — asserting every read (threshold,
+  balance, proposal fields, absolute statuses, approvals) against chain truth.
 
 ---
 
