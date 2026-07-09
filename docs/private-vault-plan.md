@@ -172,7 +172,9 @@ commitment; a revoked (rotated-out) auditor CANNOT read post-rotation activity.
   upstream-reportable (as with the unshieldedBalance u64 report) and check the shielded builtins for
   analogous width bugs before Tier 2 relies on them.
 - **Proving cost on device:** membership/nullifier circuits (Tier 3) are the heaviest;
-  budget a device-proving benchmark before committing to circuit shape.
+  budget a device-proving benchmark before committing to circuit shape. Harness +
+  Tier 1 baseline: `docs/proving-benchmark.md` (Tier 1 proves <2s / 607MB peak on a
+  2GB device — fine; re-run per new circuit as Tier 2/3 land).
 - **Key hygiene:** the vault viewing key is a long-lived secret on every member device —
   it belongs in the same protected storage tier as wallet material, and rotation must
   be a first-class flow, not an afterthought.
