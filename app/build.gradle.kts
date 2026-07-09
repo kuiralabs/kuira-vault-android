@@ -13,11 +13,11 @@ plugins {
 }
 
 android {
-    namespace = "com.kuiralabs.starter.counter"
+    namespace = "com.kuiralabs.vault"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "com.kuiralabs.starter.counter"
+        applicationId = "com.kuiralabs.vault"
         // Kuira SDK requires minSdk 30 (Block Store API, passkey
         // CredentialManager, Android 11+ scoped storage assumptions).
         minSdk = 30

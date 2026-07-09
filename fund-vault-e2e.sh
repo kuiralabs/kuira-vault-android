@@ -24,7 +24,7 @@ command -v mn  >/dev/null 2>&1 || { echo "✗ mn CLI not in PATH (needed for fun
 nc -z 127.0.0.1 9944 2>/dev/null || { echo "✗ Localnet node (127.0.0.1:9944) not reachable. Start it with: mn localnet start" >&2; exit 1; }
 echo "  ✓ adb device, mn CLI, localnet reachable"
 
-CLASS="${VAULT_E2E_CLASS:-com.kuiralabs.starter.counter.VaultDeployE2ETest}"
+CLASS="${VAULT_E2E_CLASS:-com.kuiralabs.vault.VaultDeployE2ETest}"
 
 $ADB logcat -c
 

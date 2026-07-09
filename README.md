@@ -116,7 +116,7 @@ accounts.
   threshold, and proposal-lifecycle accounting.
 - **On-chain e2e** (localnet + one emulator):
   ```bash
-  VAULT_E2E_CLASS="com.kuiralabs.starter.counter.VaultDeployE2ETest#governance_full_flow_2of3" \
+  VAULT_E2E_CLASS="com.kuiralabs.vault.VaultDeployE2ETest#governance_full_flow_2of3" \
     ./fund-vault-e2e.sh
   ```
   Three fresh wallets run the full 2-of-3 ceremony, asserting every read —
