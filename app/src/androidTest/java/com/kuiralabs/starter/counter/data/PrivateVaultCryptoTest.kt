@@ -111,4 +111,24 @@ class PrivateVaultCryptoTest {
     fun invite_rejectsGarbage() {
         assertThrows(Exception::class.java) { PrivateVaultCrypto.decodeInvite("not-a-valid-invite") }
     }
+
+    @Test
+    fun invite_rejectsTampering() {
+        val invite = PrivateVaultCrypto.Invite(
+            vaultAddress = "ab".repeat(32),
+            viewingKey = PrivateVaultCrypto.newViewingKey(),
+            threshold = 2,
+            signerCount = 3,
+            thresholdSalt = PrivateVaultCrypto.newSalt(),
+            memberSalt = PrivateVaultCrypto.newSalt(),
+        )
+        val good = PrivateVaultCrypto.encodeInvite(invite)
+        // Flip one character of the body (inside the address field) without touching the checksum,
+        // then re-encode — decode must reject it on the integrity check, not silently accept.
+        val body = String(java.util.Base64.getUrlDecoder().decode(good), Charsets.UTF_8).toCharArray()
+        body[10] = if (body[10] == 'c') 'd' else 'c'
+        val tampered = java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString(String(body).toByteArray(Charsets.UTF_8))
+        assertThrows(Exception::class.java) { PrivateVaultCrypto.decodeInvite(tampered) }
+    }
 }

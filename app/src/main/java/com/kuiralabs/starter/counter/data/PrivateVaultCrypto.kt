@@ -129,14 +129,23 @@ internal object PrivateVaultCrypto {
         val memberSalt: ByteArray,
     )
 
-    // Encoded base64(version|addr|viewingKey|threshold|signerCount|thresholdSalt|memberSalt), each
-    // field base64-URL. A delimited format (not JSON) keeps this module free of Android's org.json
-    // stub so it unit-tests on the JVM; '|' never appears in base64-URL or a hex address.
+    // Encoded base64(version|addr|viewingKey|threshold|signerCount|thresholdSalt|memberSalt|check),
+    // each field base64-URL. A delimited format (not JSON) keeps this module free of Android's
+    // org.json stub so it unit-tests on the JVM; '|' never appears in base64-URL or a hex address.
+    // `check` is a SHA-256 checksum over the preceding fields — decode rejects a corrupted or
+    // truncated invite UP FRONT (e.g. a mangled viewing key that still decodes to 32 bytes) rather
+    // than saving a broken membership that only fails later on the first proposal decrypt. It is an
+    // integrity check, NOT a MAC — the invite carries its own secret, so there's no forgery to guard.
     private const val INVITE_VERSION = 1
     private const val SEP = "|"
+    private const val CHECK_BYTES = 8
+
+    private fun checksum(body: String): String =
+        b64(java.security.MessageDigest.getInstance("SHA-256")
+            .digest(body.toByteArray(Charsets.UTF_8)).copyOf(CHECK_BYTES))
 
     fun encodeInvite(invite: Invite): String {
-        val fields = listOf(
+        val body = listOf(
             INVITE_VERSION.toString(),
             invite.vaultAddress,
             b64(invite.viewingKey),
@@ -144,14 +153,18 @@ internal object PrivateVaultCrypto {
             invite.signerCount.toString(),
             b64(invite.thresholdSalt),
             b64(invite.memberSalt),
-        )
-        return b64(fields.joinToString(SEP).toByteArray(Charsets.UTF_8))
+        ).joinToString(SEP)
+        return b64("$body$SEP${checksum(body)}".toByteArray(Charsets.UTF_8))
     }
 
     fun decodeInvite(encoded: String): Invite {
-        val parts = String(unb64(encoded.trim()), Charsets.UTF_8).split(SEP)
-        require(parts.size == 7) { "malformed invite" }
+        val decoded = runCatching { String(unb64(encoded.trim()), Charsets.UTF_8) }
+            .getOrElse { throw IllegalArgumentException("malformed invite") }
+        val parts = decoded.split(SEP)
+        require(parts.size == 8) { "malformed invite" }
         require(parts[0].toInt() == INVITE_VERSION) { "unsupported invite version" }
+        val body = parts.dropLast(1).joinToString(SEP)
+        require(parts[7] == checksum(body)) { "invite failed its integrity check (corrupted or truncated)" }
         return Invite(
             vaultAddress = parts[1],
             viewingKey = unb64(parts[2]),
