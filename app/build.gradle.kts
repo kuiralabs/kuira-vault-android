@@ -85,7 +85,11 @@ val syncPrivateVaultRuntime by tasks.registering(Copy::class) {
     rename { "private-vault-contract.js" }
 }
 val syncPrivateVaultKeys by tasks.registering(Copy::class) {
+    // compact compile splits a circuit's key set across two dirs: keys/ holds .prover + .verifier,
+    // zkir/ holds the .bzkir circuit IR. Local proving needs ALL THREE, so pull the .bzkir too —
+    // the contract plugin does this for the public vault; the manual sync must match it.
     from("../contract/src/managed/PrivateVault/keys")
+    from("../contract/src/managed/PrivateVault/zkir") { include("*.bzkir") }
     into(layout.projectDirectory.dir("src/main/assets/private-vault-keys"))
 }
 tasks.named("preBuild") { dependsOn(syncPrivateVaultRuntime, syncPrivateVaultKeys) }
