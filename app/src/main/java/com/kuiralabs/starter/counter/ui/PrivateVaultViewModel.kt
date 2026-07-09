@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.kuiralabs.starter.counter.data.PrivateVaultContract
 import com.kuiralabs.starter.counter.data.PrivateVaultCrypto
 import com.kuiralabs.starter.counter.data.PrivateVaultStore
+import com.kuiralabs.starter.counter.data.PrivateVaultValidation
 import com.midnight.kuira.core.compact.ContractCallStage
 import com.midnight.kuira.core.compact.MidnightContract
 import com.midnight.kuira.core.crypto.address.Bech32m
@@ -86,28 +87,12 @@ class PrivateVaultViewModel @Inject constructor(
     fun create(threshold: Int, coSignerHexKeys: List<String>) {
         val sdk = sdkProvider.sdk.value ?: return
         val network = sdkProvider.selectedNetwork.value
-        val coSigners = mutableListOf<ByteArray>()
-        for ((i, raw) in coSignerHexKeys.withIndex()) {
-            val entry = raw.trim()
-            if (entry.isEmpty()) continue
-            if (entry.length != 64 || !entry.all { it in "0123456789abcdefABCDEF" }) {
-                _error.value = "Co-signer ${i + 2} key must be exactly 64 hex characters " +
-                    "(got ${entry.length}) — fix it or leave the field blank."
-                return
-            }
-            coSigners += hexToBytes(entry)
+        val plan = PrivateVaultValidation.planCreate(coSignerHexKeys, threshold, PrivateVaultContract.ROSTER_SIZE)
+        val coSigners = when (plan) {
+            is PrivateVaultValidation.CreatePlan.Invalid -> { _error.value = plan.error; return }
+            is PrivateVaultValidation.CreatePlan.Valid -> plan.coSignerKeys
         }
         val signers = listOf(sdk.coinPublicKey) + coSigners
-        if (signers.size > PrivateVaultContract.ROSTER_SIZE) {
-            _error.value = "A vault supports at most ${PrivateVaultContract.ROSTER_SIZE} signers " +
-                "(you + ${PrivateVaultContract.ROSTER_SIZE - 1} co-signers)."
-            return
-        }
-        if (threshold !in 1..signers.size) {
-            _error.value = "Threshold $threshold needs $threshold real signers but only ${signers.size} " +
-                "provided — add co-signer keys or lower the threshold."
-            return
-        }
         runAction {
             val result = PrivateVaultContract.deploy(context, sdk, signers, threshold) { _callStage.value = it }
             store.save(network, PrivateVaultStore.Membership(
