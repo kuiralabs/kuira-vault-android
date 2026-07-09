@@ -104,6 +104,8 @@ class PrivateVaultViewModel @Inject constructor(
                 memberSalt = result.creatorSalt,
                 isCreator = true,
                 invites = result.coSignerInvites,
+                // Index-aligned with the invites, so the Member screen can show each invite's owner.
+                coSignerKeyHexes = coSigners.map { it.toHex() },
             ))
             onSdkOrNetworkChanged(sdk, network)
         }
@@ -259,6 +261,7 @@ class PrivateVaultViewModel @Inject constructor(
             proposals = proposals,
             isCreator = m.isCreator,
             invites = m.invites,
+            coSignerKeyHexes = m.coSignerKeyHexes,
         )
     }
 

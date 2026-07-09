@@ -38,6 +38,7 @@ class PrivateVaultStoreTest {
         memberSalt = ByteArray(32) { 0x11 },
         isCreator = creator,
         invites = if (creator) listOf("invite-b", "invite-c") else emptyList(),
+        coSignerKeyHexes = if (creator) listOf("bb".repeat(32), "cc".repeat(32)) else emptyList(),
     )
 
     @Before fun clean() = wipe()
@@ -59,7 +60,10 @@ class PrivateVaultStoreTest {
         assertArrayEquals(m.thresholdSalt, got.thresholdSalt)
         assertArrayEquals(m.memberSalt, got.memberSalt)
         assertTrue(got.isCreator)
-        assertEquals(m.invites.toSet(), got.invites.toSet())
+        // Order matters: invites[i] must stay aligned with coSignerKeyHexes[i] (the "Co-signer 2/3"
+        // labels + key echo depend on it) — a StringSet round-trip would have scrambled this.
+        assertEquals(m.invites, got.invites)
+        assertEquals(m.coSignerKeyHexes, got.coSignerKeyHexes)
     }
 
     @Test

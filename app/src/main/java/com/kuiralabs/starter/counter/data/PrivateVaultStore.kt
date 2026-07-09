@@ -49,8 +49,11 @@ class PrivateVaultStore @Inject constructor(
         val memberSalt: ByteArray,
         /** True if this device DEPLOYED the vault (holds the invites to share); false if it JOINED. */
         val isCreator: Boolean,
-        /** Encoded invites to re-share (creator only). */
+        /** Encoded invites to re-share (creator only), in co-signer order (index 0 = co-signer 2). */
         val invites: List<String>,
+        /** Each co-signer's own coin-key hex, index-aligned with [invites], so the creator can match
+         *  an invite to the person they typed. Creator-only; empty for a joiner. */
+        val coSignerKeyHexes: List<String> = emptyList(),
     )
 
     private fun k(network: MidnightNetwork, field: String) = "pvault.$field.${network.name}"
@@ -65,7 +68,9 @@ class PrivateVaultStore @Inject constructor(
             thresholdSalt = b64(prefs.getString(k(network, "ts"), null) ?: return null),
             memberSalt = b64(prefs.getString(k(network, "ms"), null) ?: return null),
             isCreator = prefs.getBoolean(k(network, "creator"), false),
-            invites = prefs.getStringSet(k(network, "invites"), emptySet())?.toList().orEmpty(),
+            // Ordered JSON (a StringSet loses order → mislabeled "Co-signer 2/3" + misaligned keys).
+            invites = jsonList(prefs.getString(k(network, "invites"), null)),
+            coSignerKeyHexes = jsonList(prefs.getString(k(network, "cosignerKeys"), null)),
         )
     }
 
@@ -78,8 +83,16 @@ class PrivateVaultStore @Inject constructor(
             .putString(k(network, "ts"), b64(m.thresholdSalt))
             .putString(k(network, "ms"), b64(m.memberSalt))
             .putBoolean(k(network, "creator"), m.isCreator)
-            .putStringSet(k(network, "invites"), m.invites.toSet())
+            .putString(k(network, "invites"), JSONArray(m.invites).toString())
+            .putString(k(network, "cosignerKeys"), JSONArray(m.coSignerKeyHexes).toString())
             .apply()
+    }
+
+    /** Parse a stored JSON string array (ordered) → list; empty on null/blank/malformed. */
+    private fun jsonList(json: String?): List<String> {
+        if (json.isNullOrBlank()) return emptyList()
+        return runCatching { JSONArray(json).let { a -> (0 until a.length()).map { a.getString(it) } } }
+            .getOrDefault(emptyList())
     }
 
     // "Did I approve?" is tracked LOCALLY per (network, VAULT) — the contract's approval tags are
@@ -100,7 +113,7 @@ class PrivateVaultStore @Inject constructor(
         val e = prefs.edit()
             .remove(k(network, "addr")).remove(k(network, "vk")).remove(k(network, "th"))
             .remove(k(network, "sc")).remove(k(network, "ts")).remove(k(network, "ms"))
-            .remove(k(network, "creator")).remove(k(network, "invites"))
+            .remove(k(network, "creator")).remove(k(network, "invites")).remove(k(network, "cosignerKeys"))
         if (address != null) e.remove(approvedKey(network, address))
         e.apply()
     }
@@ -127,6 +140,7 @@ class PrivateVaultStore @Inject constructor(
                 .put("ms", b64(m.memberSalt))
                 .put("creator", m.isCreator)
                 .put("invites", JSONArray(m.invites))
+                .put("cknh", JSONArray(m.coSignerKeyHexes))
                 .put("approved", JSONArray(approvedIds(network, m.address).sorted())))
         }
         if (nets.length() == 0) return null
@@ -149,8 +163,8 @@ class PrivateVaultStore @Inject constructor(
                 thresholdSalt = b64(o.getString("ts")),
                 memberSalt = b64(o.getString("ms")),
                 isCreator = o.getBoolean("creator"),
-                invites = o.optJSONArray("invites")
-                    ?.let { arr -> (0 until arr.length()).map { arr.getString(it) } }.orEmpty(),
+                invites = jsonList(o.optJSONArray("invites")?.toString()),
+                coSignerKeyHexes = jsonList(o.optJSONArray("cknh")?.toString()),
             ))
             o.optJSONArray("approved")?.let { arr ->
                 for (i in 0 until arr.length()) markApproved(network, o.getString("addr"), arr.getLong(i), true)

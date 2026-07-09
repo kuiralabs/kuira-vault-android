@@ -25,6 +25,8 @@ sealed interface PrivateVaultUiState {
         val isCreator: Boolean,
         /** Co-signer invites to share (creator only). */
         val invites: List<String>,
+        /** Each invite's owner coin-key hex, index-aligned with [invites] (creator only). */
+        val coSignerKeyHexes: List<String> = emptyList(),
         val refreshing: Boolean = false,
     ) : PrivateVaultUiState
 }

@@ -207,13 +207,16 @@ private fun MemberBody(
         HorizontalDivider()
         Text("Invites to share", style = MaterialTheme.typography.titleSmall)
         Text(
-            "Send each co-signer their invite (one is unique to each). It carries the viewing key and " +
-                "their signer material — treat it like a secret.",
+            "Send each co-signer THEIR invite (each is unique — it carries that person's own signer " +
+                "material). Match by the key you entered, shown below. Treat an invite like a secret.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         state.invites.forEachIndexed { i, invite ->
+            // Echo the co-signer's OWN key tail so the creator can't mis-send a secret to the wrong person.
+            val keyHex = state.coSignerKeyHexes.getOrNull(i)
+            val who = if (keyHex != null) "Co-signer ${i + 2} (…${keyHex.takeLast(6)})" else "Co-signer ${i + 2}"
             Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                Text("Co-signer ${i + 2}: ${shortAddress(invite)}",
+                Text("$who: ${shortAddress(invite)}",
                     style = MaterialTheme.typography.bodySmall, maxLines = 1,
                     overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                 TextButton(onClick = { clipboard.setText(AnnotatedString(invite)) }) { Text("Copy") }
