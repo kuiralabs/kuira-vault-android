@@ -5,6 +5,8 @@ import android.util.Base64
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.midnight.kuira.core.network.MidnightNetwork
+import org.json.JSONArray
+import org.json.JSONObject
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -105,6 +107,61 @@ class PrivateVaultStore @Inject constructor(
 
     private fun approvedKey(network: MidnightNetwork, address: String) = "pvault.approved.${network.name}.$address"
 
+    // ── Cloud-backup round-trip (rides the Sigil app-data backup) ──
+    // A reinstall wipes EncryptedSharedPreferences, so without this a member loses their whole vault
+    // (viewing key + salts are unrecoverable — the on-chain state is opaque) and their approval
+    // state. [snapshotBytes]/[restoreFromBytes] let a PrivateVaultBackupProvider fold this into the
+    // sigil's cloud backup, which is PRF-encrypted under the passkey — same protection as the seed.
+    // Versioned so a future schema can decline an unrecognized blob rather than crash.
+
+    fun snapshotBytes(): ByteArray? {
+        val nets = JSONObject()
+        for (network in MidnightNetwork.values()) {
+            val m = get(network) ?: continue
+            nets.put(network.name, JSONObject()
+                .put("addr", m.address)
+                .put("vk", b64(m.viewingKey))
+                .put("th", m.threshold)
+                .put("sc", m.signerCount)
+                .put("ts", b64(m.thresholdSalt))
+                .put("ms", b64(m.memberSalt))
+                .put("creator", m.isCreator)
+                .put("invites", JSONArray(m.invites))
+                .put("approved", JSONArray(approvedIds(network, m.address).sorted())))
+        }
+        if (nets.length() == 0) return null
+        return JSONObject().put("v", SNAPSHOT_VERSION).put("nets", nets)
+            .toString().toByteArray(Charsets.UTF_8)
+    }
+
+    fun restoreFromBytes(bytes: ByteArray) {
+        val root = JSONObject(String(bytes, Charsets.UTF_8))
+        if (root.optInt("v") != SNAPSHOT_VERSION) return // decline unknown schema, don't crash
+        val nets = root.optJSONObject("nets") ?: return
+        for (name in nets.keys()) {
+            val network = runCatching { MidnightNetwork.valueOf(name) }.getOrNull() ?: continue
+            val o = nets.getJSONObject(name)
+            save(network, Membership(
+                address = o.getString("addr"),
+                viewingKey = b64(o.getString("vk")),
+                threshold = o.getInt("th"),
+                signerCount = o.getInt("sc"),
+                thresholdSalt = b64(o.getString("ts")),
+                memberSalt = b64(o.getString("ms")),
+                isCreator = o.getBoolean("creator"),
+                invites = o.optJSONArray("invites")
+                    ?.let { arr -> (0 until arr.length()).map { arr.getString(it) } }.orEmpty(),
+            ))
+            o.optJSONArray("approved")?.let { arr ->
+                for (i in 0 until arr.length()) markApproved(network, o.getString("addr"), arr.getLong(i), true)
+            }
+        }
+    }
+
     private fun b64(b: ByteArray): String = Base64.encodeToString(b, Base64.NO_WRAP)
     private fun b64(s: String): ByteArray = Base64.decode(s, Base64.NO_WRAP)
+
+    private companion object {
+        const val SNAPSHOT_VERSION = 1
+    }
 }
