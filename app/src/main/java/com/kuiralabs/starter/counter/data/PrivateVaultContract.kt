@@ -6,6 +6,8 @@ import com.midnight.kuira.core.compact.ContractCallStage
 import com.midnight.kuira.core.compact.MidnightContract
 import com.midnight.kuira.core.compact.proving.ProvingKeyManager
 import com.midnight.kuira.sdk.MidnightSdk
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 import java.math.BigInteger
 
 /**
@@ -89,6 +91,7 @@ internal object PrivateVaultContract {
         val address: String,
         val viewingKey: ByteArray,
         val threshold: Int,
+        val signerCount: Int,
         val thresholdSalt: ByteArray,
         /** The deployer's own (signer 0) secret salt. */
         val creatorSalt: ByteArray,
@@ -133,12 +136,13 @@ internal object PrivateVaultContract {
         )
         val address = writeHandle.deploy(onProgress = onProgress).contractAddress
 
-        val invites = (1 until signerCoinPublicKeys.size).map { i ->
+        val signerCount = signerCoinPublicKeys.size
+        val invites = (1 until signerCount).map { i ->
             PrivateVaultCrypto.encodeInvite(
-                PrivateVaultCrypto.Invite(address, viewingKey, threshold, thresholdSalt, salts[i]),
+                PrivateVaultCrypto.Invite(address, viewingKey, threshold, signerCount, thresholdSalt, salts[i]),
             )
         }
-        return DeployResult(address, viewingKey, threshold, thresholdSalt, salts[0], invites)
+        return DeployResult(address, viewingKey, threshold, signerCount, thresholdSalt, salts[0], invites)
     }
 
     /** Deposit is identical to the public vault — value isn't hidden in Tier 1. */
@@ -220,6 +224,22 @@ internal object PrivateVaultContract {
     fun buildReadHandle(context: Context, sdk: MidnightSdk, address: String): MidnightContract =
         buildHandle(context, sdk, address, forWrite = false, constructorArgs = callConstructorArgs())
 
+    /**
+     * Live per-proposal approval counts from the PUBLIC `_approvalCount` ledger map — the one
+     * governance value that changes when ANOTHER member's device approves. Approval identities stay
+     * hidden (tags), only the counts are public by design. Emits on each on-chain change so the UI
+     * re-reads (and re-decrypts) the moment a co-signer acts. Mirrors the public vault's stream.
+     */
+    fun observeApprovalCounts(handle: MidnightContract): Flow<Map<Long, Int>> =
+        handle.observeLedger().map { ledger ->
+            val raw = ledger.getRawOrNull("_approvalCount") as? Map<*, *> ?: return@map emptyMap()
+            raw.entries.mapNotNull { (k, v) ->
+                val id = (k as? Number)?.toLong() ?: (k as? String)?.toLongOrNull() ?: return@mapNotNull null
+                val n = (v as? Number)?.toInt() ?: (v as? String)?.toIntOrNull() ?: return@mapNotNull null
+                id to n
+            }.toMap()
+        }
+
     // ── Reads: a member decrypts each proposal from chain state ──
 
     /** A private proposal as a member sees it: chain-truth status/count + the DECRYPTED contents. */
@@ -230,53 +250,63 @@ internal object PrivateVaultContract {
         val amount: BigInteger,
         val status: Int,
         val approvals: Int,
+        /** False if this device's viewing key couldn't decrypt the payload (garbage/wrong-key proposal). */
+        val readable: Boolean = true,
     )
 
-    suspend fun getProposalCount(handle: MidnightContract): Long =
-        jsonScalar(handle.read("getProposalCount")).toLong()
-
-    suspend fun getUnshieldedBalance(handle: MidnightContract, color: ByteArray): BigInteger =
-        BigInteger(jsonScalar(handle.read("getUnshieldedBalance", color)))
+    /** The whole member view, read in batched snapshots: treasury balance + decrypted proposals. */
+    data class MemberSnapshot(val balance: BigInteger, val proposals: List<MemberProposal>)
 
     /**
-     * Load every proposal a member can see: batched status + count + payload per id, decrypting each
-     * payload with [viewingKey]. Ids are contiguous from 0; [getProposalCount] bounds the walk.
+     * Load the whole member view in batched reads. The HEADER batch (proposal count + treasury
+     * balance) carries [notIndexedTimeoutMs] so a freshly-created/joined contract that lags the
+     * indexer is waited through — not misreported as "read failed" or "0 proposals". A second batch
+     * then reads status + approval count + payload per id (ids contiguous from 0), decrypting each
+     * payload with [viewingKey]. All reads in a batch see one chain snapshot.
      */
-    suspend fun listProposals(
-        handle: MidnightContract, viewingKey: ByteArray, notIndexedTimeoutMs: Long = 0,
-    ): List<MemberProposal> {
-        val count = try {
-            jsonScalar(handle.read("getProposalCount")).toLong()
-        } catch (e: Exception) {
-            if (notIndexedTimeoutMs > 0) 0L else throw e
+    suspend fun loadSnapshot(
+        handle: MidnightContract, viewingKey: ByteArray, color: ByteArray, notIndexedTimeoutMs: Long = 0,
+    ): MemberSnapshot {
+        val header = handle.readMany(
+            listOf(
+                MidnightContract.ReadRequest("count", "getProposalCount"),
+                MidnightContract.ReadRequest("balance", "getUnshieldedBalance", listOf(color)),
+            ),
+            notIndexedTimeoutMs,
+        )
+        fun ok(map: Map<String, MidnightContract.ReadOutcome>, key: String): String {
+            val r = map[key] ?: error("missing read '$key'")
+            r.error?.let { throw CircuitExecutionException("PrivateVault read '$key' failed: $it") }
+            return r.json!!
         }
-        if (count == 0L) return emptyList()
+        val count = jsonScalar(ok(header, "count")).toLong()
+        val balance = BigInteger(jsonScalar(ok(header, "balance")))
+        if (count == 0L) return MemberSnapshot(balance, emptyList())
 
-        val requests = (0 until count).flatMap { id ->
+        val results = handle.readMany((0 until count).flatMap { id ->
             listOf(
                 MidnightContract.ReadRequest("s:$id", "getProposalStatus", listOf(BigInteger.valueOf(id))),
                 MidnightContract.ReadRequest("a:$id", "getApprovalCount", listOf(BigInteger.valueOf(id))),
                 MidnightContract.ReadRequest("y:$id", "getProposalPayload", listOf(BigInteger.valueOf(id))),
             )
+        }, notIndexedTimeoutMs)
+        val proposals = (0 until count).map { id ->
+            val status = jsonScalar(ok(results, "s:$id")).toInt()
+            val approvals = jsonScalar(ok(results, "a:$id")).toInt()
+            // A proposal's commitment and ciphertext are independent contract args, so a signer CAN
+            // store a garbage/wrong-key payload. Guard EACH decrypt so one unreadable proposal can't
+            // fail the whole snapshot (a view-DoS) — surface it as an unreadable row instead.
+            val decrypted = runCatching {
+                PrivateVaultCrypto.decryptPreimage(viewingKey, hexToBytes(jsonScalar(ok(results, "y:$id"))))
+            }.getOrNull()
+            if (decrypted != null) {
+                MemberProposal(id, decrypted.recipient.toHex(), decrypted.color.toHex(),
+                    decrypted.amount, status, approvals, readable = true)
+            } else {
+                MemberProposal(id, "", "", BigInteger.ZERO, status, approvals, readable = false)
+            }
         }
-        val results = handle.readMany(requests, notIndexedTimeoutMs)
-        fun ok(key: String): String {
-            val r = results[key] ?: error("missing read '$key'")
-            r.error?.let { throw CircuitExecutionException("PrivateVault read '$key' failed: $it") }
-            return r.json!!
-        }
-        return (0 until count).map { id ->
-            val payload = hexToBytes(jsonScalar(ok("y:$id")))
-            val p = PrivateVaultCrypto.decryptPreimage(viewingKey, payload)
-            MemberProposal(
-                id = id,
-                recipientHashHex = p.recipient.toHex(),
-                colorHex = p.color.toHex(),
-                amount = p.amount,
-                status = jsonScalar(ok("s:$id")).toInt(),
-                approvals = jsonScalar(ok("a:$id")).toInt(),
-            )
-        }
+        return MemberSnapshot(balance, proposals)
     }
 
     // PrivateProposalStatus ordinals: Inactive=0, Active=1, Executed=2.

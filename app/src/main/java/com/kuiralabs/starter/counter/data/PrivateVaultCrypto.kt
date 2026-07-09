@@ -123,13 +123,15 @@ internal object PrivateVaultCrypto {
         val vaultAddress: String,
         val viewingKey: ByteArray,
         val threshold: Int,
+        /** Real signer count — shared among MEMBERS (the on-chain roster stays padded/hidden). */
+        val signerCount: Int,
         val thresholdSalt: ByteArray,
         val memberSalt: ByteArray,
     )
 
-    // Encoded as base64(version|addr|viewingKey|threshold|thresholdSalt|memberSalt), each field
-    // base64-URL. A delimited format (not JSON) keeps this module free of Android's org.json stub
-    // so it unit-tests on the JVM; '|' never appears in base64-URL or a hex address.
+    // Encoded base64(version|addr|viewingKey|threshold|signerCount|thresholdSalt|memberSalt), each
+    // field base64-URL. A delimited format (not JSON) keeps this module free of Android's org.json
+    // stub so it unit-tests on the JVM; '|' never appears in base64-URL or a hex address.
     private const val INVITE_VERSION = 1
     private const val SEP = "|"
 
@@ -139,6 +141,7 @@ internal object PrivateVaultCrypto {
             invite.vaultAddress,
             b64(invite.viewingKey),
             invite.threshold.toString(),
+            invite.signerCount.toString(),
             b64(invite.thresholdSalt),
             b64(invite.memberSalt),
         )
@@ -147,14 +150,15 @@ internal object PrivateVaultCrypto {
 
     fun decodeInvite(encoded: String): Invite {
         val parts = String(unb64(encoded.trim()), Charsets.UTF_8).split(SEP)
-        require(parts.size == 6) { "malformed invite" }
+        require(parts.size == 7) { "malformed invite" }
         require(parts[0].toInt() == INVITE_VERSION) { "unsupported invite version" }
         return Invite(
             vaultAddress = parts[1],
             viewingKey = unb64(parts[2]),
             threshold = parts[3].toInt(),
-            thresholdSalt = unb64(parts[4]),
-            memberSalt = unb64(parts[5]),
+            signerCount = parts[4].toInt(),
+            thresholdSalt = unb64(parts[5]),
+            memberSalt = unb64(parts[6]),
         )
     }
 

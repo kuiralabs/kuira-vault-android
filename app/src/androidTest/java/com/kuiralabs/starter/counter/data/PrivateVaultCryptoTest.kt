@@ -94,6 +94,7 @@ class PrivateVaultCryptoTest {
             vaultAddress = "ab".repeat(32),
             viewingKey = PrivateVaultCrypto.newViewingKey(),
             threshold = 2,
+            signerCount = 3,
             thresholdSalt = PrivateVaultCrypto.newSalt(),
             memberSalt = PrivateVaultCrypto.newSalt(),
         )
@@ -101,6 +102,7 @@ class PrivateVaultCryptoTest {
         assertEquals(invite.vaultAddress, decoded.vaultAddress)
         assertArrayEquals(invite.viewingKey, decoded.viewingKey)
         assertEquals(invite.threshold, decoded.threshold)
+        assertEquals(invite.signerCount, decoded.signerCount)
         assertArrayEquals(invite.thresholdSalt, decoded.thresholdSalt)
         assertArrayEquals(invite.memberSalt, decoded.memberSalt)
     }
