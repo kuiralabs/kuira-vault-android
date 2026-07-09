@@ -120,8 +120,10 @@ internal object PrivateVaultContract {
         val thresholdSalt = PrivateVaultCrypto.newSalt()
         val salts = signerCoinPublicKeys.map { PrivateVaultCrypto.newSalt() }
 
-        // A local handle (no address) computes commitments against initialState().
-        val local = buildHandle(context, sdk, address = null, forWrite = false)
+        // A local handle (no address) computes commitments against initialState(). It needs
+        // shape-valid constructor args: readLocal runs initialState(), which VALIDATES the ctor arg
+        // shapes even though a pure commitment circuit never touches state (same as the read path).
+        val local = buildHandle(context, sdk, address = null, forWrite = false, constructorArgs = callConstructorArgs())
         val realCommitments = signerCoinPublicKeys.indices.map { i ->
             signerCommitment(local, signerCoinPublicKeys[i], salts[i])
         }
@@ -253,6 +255,10 @@ internal object PrivateVaultContract {
         /** False if this device's viewing key couldn't decrypt the payload (garbage/wrong-key proposal). */
         val readable: Boolean = true,
     )
+
+    /** Treasury balance for [color] — a single view-call read (the batched path is [loadSnapshot]). */
+    suspend fun getUnshieldedBalance(handle: MidnightContract, color: ByteArray): BigInteger =
+        BigInteger(jsonScalar(handle.read("getUnshieldedBalance", color)))
 
     /** The whole member view, read in batched snapshots: treasury balance + decrypted proposals. */
     data class MemberSnapshot(val balance: BigInteger, val proposals: List<MemberProposal>)
