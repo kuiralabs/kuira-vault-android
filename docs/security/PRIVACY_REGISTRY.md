@@ -28,6 +28,9 @@ Stated in the plan and repeated here so it is never mistaken for an oversight:
 
 - **Tier 1 execution reveals recipient + amount** in the transaction's unshielded
   outputs — inherent to unshielded custody. Closed by Tier 2 (shielded treasury).
+- **Tier 1 treasury balance is public.** The money stays unshielded, so deposits,
+  withdrawals, and the standing balance are visible on-chain (the matrix's "balance →
+  hidden" is the Tier 2 target). Closed by Tier 2 (shielded treasury).
 - **Approval counts are public** by product decision (governance transparency
   without identity).
 - Each successful execution publicly proves `threshold ≤ that proposal's count`,

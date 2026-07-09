@@ -7,7 +7,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -27,7 +26,6 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.midnight.kuira.dapp.ContractCallProgressBar
 import com.midnight.kuira.sdk.NIGHT_DECIMALS
 import com.midnight.kuira.sdk.formatNight
 import java.math.BigInteger
@@ -48,7 +46,6 @@ fun VaultCard(
 ) {
     val state by viewModel.state.collectAsState()
     val busy by viewModel.busy.collectAsState()
-    val callStage by viewModel.callStage.collectAsState()
     val error by viewModel.error.collectAsState()
 
     Card(modifier = modifier.fillMaxWidth()) {
@@ -78,15 +75,7 @@ fun VaultCard(
                 )
             }
 
-            if (busy) {
-                if (callStage == null) CircularProgressIndicator()
-                else ContractCallProgressBar(
-                    stage = callStage,
-                    accent = MaterialTheme.colorScheme.primary,
-                    trackColor = MaterialTheme.colorScheme.surfaceVariant,
-                    labelColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
+            // Action progress is rendered by VaultScreen as a pinned bottom bar (outside the scroll).
             if (error != null) {
                 Text("Last error: $error", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             }

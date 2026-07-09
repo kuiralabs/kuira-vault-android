@@ -40,7 +40,8 @@ data class PrivateProposalView(
     val approvals: Int,
     val threshold: Int,
     val executed: Boolean,
-    /** Whether THIS device approved — tracked locally (tags are unlinkable, not queryable). */
+    /** Whether THIS device approved — tracked locally (tags are unlinkable without the signer's
+     *  secret salt, and not queryable). */
     val approvedByMe: Boolean,
     /** False if this device's viewing key couldn't decrypt this proposal (garbage/wrong-key). */
     val readable: Boolean = true,

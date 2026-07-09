@@ -253,7 +253,6 @@ internal object VaultContract {
     data class OnChainProposal(
         val recipientKind: Int,
         val recipientHashHex: String,
-        val colorHex: String,
         val amountBase: BigInteger,
         val status: Int,
     )
@@ -286,7 +285,6 @@ internal object VaultContract {
         return OnChainProposal(
             recipientKind = to.getInt("kind"),
             recipientHashHex = bytesHex(to, "address"),
-            colorHex = bytesHex(o, "color"),
             amountBase = BigInteger(o.getString("amount")),
             status = o.getInt("status"),
         )
@@ -417,10 +415,8 @@ internal object VaultContract {
     // {Inactive, Active, Executed, Cancelled}. The leading Inactive is easy to miss (a
     // case-sensitive search for "Active" doesn't match it), and mapping Executed to 1 stamped
     // every FRESH proposal (Active == 1) as executed in the UI.
-    const val PROPOSAL_STATUS_INACTIVE = 0
     const val PROPOSAL_STATUS_ACTIVE = 1
     const val PROPOSAL_STATUS_EXECUTED = 2
-    const val PROPOSAL_STATUS_CANCELLED = 3
 
     /** Parse a JSON scalar (a quoted Uint decimal string, a number, or a boolean) to its text form. */
     private fun jsonScalar(json: String): String = org.json.JSONTokener(json).nextValue().toString()

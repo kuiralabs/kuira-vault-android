@@ -1,8 +1,12 @@
 package com.kuiralabs.starter.counter.data
 
+import android.content.Context
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.midnight.kuira.core.network.MidnightNetwork
+import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
@@ -101,4 +105,56 @@ class PrivateVaultStoreTest {
         assertNull(store.get(net))
         assertTrue(store.approvedIds(net, vaultA).isEmpty())
     }
+
+    /**
+     * Pre-ordering-fix builds stored invites as an unordered StringSet; the fix reads ordered JSON.
+     * Without a fallback, an in-place upgrade over a creator's old vault reads null → drops the
+     * invites, and each co-signer's per-signer salt lives ONLY inside its invite → unrecoverable.
+     * This writes the legacy StringSet directly and asserts [get] still recovers the invites.
+     */
+    @Test
+    fun get_migratesLegacyStringSetInvites() {
+        store.save(net, membership(vaultA))           // full membership (invites as JSON)
+        rawPrefs().edit()                              // clobber just the invites key with legacy format
+            .remove("pvault.invites.${net.name}")
+            .putStringSet("pvault.invites.${net.name}", setOf("invite-b", "invite-c"))
+            .apply()
+        val got = store.get(net)!!
+        assertEquals(setOf("invite-b", "invite-c"), got.invites.toSet()) // recovered (order not guaranteed for legacy)
+    }
+
+    /**
+     * Restore is REPLACE, not union: a backup taken before an approval must not resurrect it if the
+     * backup is restored over local state where that id was since approved (or vice-versa). Here the
+     * backup captures zero approvals; approving locally afterwards must be wiped by the restore.
+     */
+    @Test
+    fun restore_replacesApprovals_soStaleLocalStateIsCleared() {
+        store.save(net, membership(vaultA))
+        val backup = store.snapshotBytes()!!           // approved = [] captured
+        store.markApproved(net, vaultA, 0L, true)      // later approve 0 locally
+        store.restoreFromBytes(backup)                 // backup says none approved
+        assertTrue("restore must replace approvals, not union", store.approvedIds(net, vaultA).isEmpty())
+    }
+
+    /** One corrupted/partial network entry must not abort restore of the healthy siblings. */
+    @Test
+    fun restore_skipsMalformedNetwork_restoresOthers() {
+        store.save(net, membership(vaultA))
+        val blob = JSONObject(String(store.snapshotBytes()!!))
+        store.clear(net, vaultA)
+        // Inject a valid-enum sibling ("PREVIEW") whose body is missing the required "addr".
+        blob.getJSONObject("nets").put("PREVIEW", JSONObject().put("th", 1))
+        store.restoreFromBytes(blob.toString().toByteArray())
+        assertEquals(vaultA, store.get(net)?.address)  // healthy network restored despite bad sibling
+    }
+
+    private fun rawPrefs() = EncryptedSharedPreferences.create(
+        ApplicationProvider.getApplicationContext(),
+        "kuira-private-vault-prefs",
+        MasterKey.Builder(ApplicationProvider.getApplicationContext<Context>())
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build(),
+        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+    )
 }

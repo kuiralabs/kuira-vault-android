@@ -274,7 +274,7 @@ private fun MemberBody(
     HorizontalDivider()
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         TextButton(onClick = { clipboard.setText(AnnotatedString(state.address)) }) { Text("Copy vault address") }
-        TextButton(onClick = onDisconnect) { Text("Leave vault") }
+        TextButton(onClick = onDisconnect) { Text("Disconnect") }
     }
     Text("“Leave” only forgets this vault on this device — the on-chain contract is untouched.",
         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -290,7 +290,8 @@ private fun ProposalRow(
 ) {
     Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-            Text("Withdrawal #${p.id}", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            // Display 1-based to match the public tab (the private contract's Counter is 0-based).
+            Text("Withdrawal #${p.id + 1}", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
             val (chip, color) = when {
                 p.executed -> "✓ Completed" to MaterialTheme.colorScheme.tertiary
                 p.thresholdMet -> "Ready to execute" to MaterialTheme.colorScheme.primary

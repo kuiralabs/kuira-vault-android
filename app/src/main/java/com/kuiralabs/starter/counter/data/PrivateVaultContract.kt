@@ -248,7 +248,6 @@ internal object PrivateVaultContract {
     data class MemberProposal(
         val id: Long,
         val recipientHashHex: String,
-        val colorHex: String,
         val amount: BigInteger,
         val status: Int,
         val approvals: Int,
@@ -306,17 +305,16 @@ internal object PrivateVaultContract {
                 PrivateVaultCrypto.decryptPreimage(viewingKey, hexToBytes(jsonScalar(ok(results, "y:$id"))))
             }.getOrNull()
             if (decrypted != null) {
-                MemberProposal(id, decrypted.recipient.toHex(), decrypted.color.toHex(),
+                MemberProposal(id, decrypted.recipient.toHex(),
                     decrypted.amount, status, approvals, readable = true)
             } else {
-                MemberProposal(id, "", "", BigInteger.ZERO, status, approvals, readable = false)
+                MemberProposal(id, "", BigInteger.ZERO, status, approvals, readable = false)
             }
         }
         return MemberSnapshot(balance, proposals)
     }
 
     // PrivateProposalStatus ordinals: Inactive=0, Active=1, Executed=2.
-    const val STATUS_INACTIVE = 0
     const val STATUS_ACTIVE = 1
     const val STATUS_EXECUTED = 2
 

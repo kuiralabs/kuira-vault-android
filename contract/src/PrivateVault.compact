@@ -163,8 +163,8 @@ export circuit pvRevokeApproval(id: Uint<64>, salt: Bytes<32>): [] {
 }
 
 // Knowledge-gated rather than identity-gated: the executor presents the
-// proposal preimage and the threshold preimage — material only members (and
-// granted auditors) hold. No signer check: as in the public Vault, the
+// proposal preimage and the threshold preimage — material only members
+// hold. No signer check: as in the public Vault, the
 // approvals are the authorization; here the viewing material is the capability.
 // The send necessarily discloses recipient/color/amount into the transaction's
 // unshielded outputs (Tier 1 boundary — see the header).

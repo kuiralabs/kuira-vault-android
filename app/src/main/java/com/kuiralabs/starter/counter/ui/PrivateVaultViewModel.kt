@@ -79,8 +79,9 @@ class PrivateVaultViewModel @Inject constructor(
     }
 
     /**
-     * Create a private vault: this wallet + up to 4 co-signers (by their coin-key hex), requiring
-     * [threshold] approvals. Mints the viewing key + per-signer salts, computes the committed roster
+     * Create a private vault: this wallet + up to 2 co-signers (by their coin-key hex), requiring
+     * [threshold] approvals. (The contract roster holds up to 5 signers; the current UI collects two.)
+     * Mints the viewing key + per-signer salts, computes the committed roster
      * via the contract's own circuits, deploys, and stores this device's material + the invites to
      * share. A blank co-signer slot is dropped; a non-blank entry that isn't 64-hex is rejected.
      */
@@ -143,7 +144,7 @@ class PrivateVaultViewModel @Inject constructor(
         PrivateVaultContract.depositUnshielded(context, sdk, m.address, NATIVE_COLOR, amountBase) { _callStage.value = it }
     }
 
-    fun propose(recipient: String, amountBase: BigInteger) = withVault { sdk, _, m ->
+    fun propose(recipient: String, amountBase: BigInteger) = withVault(sensitive = true) { sdk, _, m ->
         val hashHex = recipientToHashHex(sdk, recipient) ?: run {
             _error.value = "Recipient must be an unshielded wallet address on the current network " +
                 "(same prefix as your own address)."
@@ -173,7 +174,7 @@ class PrivateVaultViewModel @Inject constructor(
         store.markApproved(network, m.address, id, false)
     }
 
-    fun execute(id: Long) = withVault { sdk, _, m ->
+    fun execute(id: Long) = withVault(sensitive = true) { sdk, _, m ->
         PrivateVaultContract.execute(
             context, sdk, m.address, proposalId = id,
             viewingKey = m.viewingKey, threshold = m.threshold, thresholdSalt = m.thresholdSalt,
@@ -298,25 +299,39 @@ class PrivateVaultViewModel @Inject constructor(
 
     // ── plumbing ──
 
-    private fun withVault(block: suspend (MidnightSdk, MidnightNetwork, PrivateVaultStore.Membership) -> Unit) {
+    private fun withVault(
+        sensitive: Boolean = false,
+        block: suspend (MidnightSdk, MidnightNetwork, PrivateVaultStore.Membership) -> Unit,
+    ) {
         val sdk = sdkProvider.sdk.value ?: return
         val network = sdkProvider.selectedNetwork.value
         val membership = store.get(network) ?: return
-        runAction {
+        runAction(sensitive) {
             block(sdk, network, membership)
             refresh(sdk, membership, network)
         }
     }
 
-    private fun runAction(block: suspend () -> Unit) {
+    /**
+     * [sensitive] gates a still-secret path (propose/execute handle a pending proposal's recipient +
+     * amount): on failure there we surface a fixed banner and log ONLY the exception type — never the
+     * raw message/throwable — so a secret can't ride out of a lower layer's error string into logcat
+     * or the UI. Non-sensitive actions keep the detailed message, which is useful during dev.
+     */
+    private fun runAction(sensitive: Boolean = false, block: suspend () -> Unit) {
         viewModelScope.launch {
             _busy.value = true
             _error.value = null
             try {
                 block()
             } catch (t: Throwable) {
-                Log.e(TAG, "Private vault action failed", t)
-                _error.value = t.message ?: t::class.simpleName ?: "Unknown error"
+                if (sensitive) {
+                    Log.e(TAG, "Private vault action failed (${t::class.simpleName})")
+                    _error.value = "That action couldn't be completed. Please try again."
+                } else {
+                    Log.e(TAG, "Private vault action failed", t)
+                    _error.value = t.message ?: t::class.simpleName ?: "Unknown error"
+                }
             } finally {
                 _busy.value = false
                 _callStage.value = null

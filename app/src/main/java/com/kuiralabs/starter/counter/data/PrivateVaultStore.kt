@@ -69,7 +69,7 @@ class PrivateVaultStore @Inject constructor(
             memberSalt = b64(prefs.getString(k(network, "ms"), null) ?: return null),
             isCreator = prefs.getBoolean(k(network, "creator"), false),
             // Ordered JSON (a StringSet loses order → mislabeled "Co-signer 2/3" + misaligned keys).
-            invites = jsonList(prefs.getString(k(network, "invites"), null)),
+            invites = readInvites(network),
             coSignerKeyHexes = jsonList(prefs.getString(k(network, "cosignerKeys"), null)),
         )
     }
@@ -88,6 +88,22 @@ class PrivateVaultStore @Inject constructor(
             .apply()
     }
 
+    /**
+     * Read the ordered-JSON invites, falling back ONCE to the legacy unordered StringSet format
+     * (data written before the ordering fix). Without this fallback, an in-place app upgrade over a
+     * creator's old vault reads null → drops the invites, and since each co-signer's per-signer salt
+     * lives ONLY inside its invite string, those invites are unrecoverable (a not-yet-joined
+     * co-signer could never join). Order is lost for legacy data — acceptable vs. losing the invites.
+     */
+    private fun readInvites(network: MidnightNetwork): List<String> {
+        val json = prefs.getString(k(network, "invites"), null)
+        if (json != null) return jsonList(json)
+        // getString returns null when the value is a StringSet (androidx type-checks), so a null here
+        // over existing data means the legacy format — recover it.
+        return runCatching { prefs.getStringSet(k(network, "invites"), null) }.getOrNull()
+            ?.toList().orEmpty()
+    }
+
     /** Parse a stored JSON string array (ordered) → list; empty on null/blank/malformed. */
     private fun jsonList(json: String?): List<String> {
         if (json.isNullOrBlank()) return emptyList()
@@ -96,17 +112,22 @@ class PrivateVaultStore @Inject constructor(
     }
 
     // "Did I approve?" is tracked LOCALLY per (network, VAULT) — the contract's approval tags are
-    // unlinkable and not queryable. Keying by address (not just network) stops one vault's approvals
+    // unlinkable without the signer's secret salt, and not queryable. Keying by address (not just network) stops one vault's approvals
     // leaking into another vault reached on the same network. Known caveat: this is device-local,
     // so a reinstall forgets it (re-approving then trips the contract's duplicate-approve assert).
     fun approvedIds(network: MidnightNetwork, address: String): Set<Long> =
         prefs.getStringSet(approvedKey(network, address), emptySet())
             ?.mapNotNull { it.toLongOrNull() }?.toSet().orEmpty()
 
+    @Synchronized
     fun markApproved(network: MidnightNetwork, address: String, id: Long, approved: Boolean) {
         val cur = approvedIds(network, address).toMutableSet()
         if (approved) cur.add(id) else cur.remove(id)
         prefs.edit().putStringSet(approvedKey(network, address), cur.map { it.toString() }.toSet()).apply()
+    }
+
+    private fun clearApproved(network: MidnightNetwork, address: String) {
+        prefs.edit().remove(approvedKey(network, address)).apply()
     }
 
     fun clear(network: MidnightNetwork, address: String?) {
@@ -154,20 +175,27 @@ class PrivateVaultStore @Inject constructor(
         val nets = root.optJSONObject("nets") ?: return
         for (name in nets.keys()) {
             val network = runCatching { MidnightNetwork.valueOf(name) }.getOrNull() ?: continue
-            val o = nets.getJSONObject(name)
-            save(network, Membership(
-                address = o.getString("addr"),
-                viewingKey = b64(o.getString("vk")),
-                threshold = o.getInt("th"),
-                signerCount = o.getInt("sc"),
-                thresholdSalt = b64(o.getString("ts")),
-                memberSalt = b64(o.getString("ms")),
-                isCreator = o.getBoolean("creator"),
-                invites = jsonList(o.optJSONArray("invites")?.toString()),
-                coSignerKeyHexes = jsonList(o.optJSONArray("cknh")?.toString()),
-            ))
-            o.optJSONArray("approved")?.let { arr ->
-                for (i in 0 until arr.length()) markApproved(network, o.getString("addr"), arr.getLong(i), true)
+            // Isolate each network: one corrupted/partial entry must not abort the others.
+            runCatching {
+                val o = nets.getJSONObject(name)
+                val address = o.getString("addr")
+                save(network, Membership(
+                    address = address,
+                    viewingKey = b64(o.getString("vk")),
+                    threshold = o.getInt("th"),
+                    signerCount = o.getInt("sc"),
+                    thresholdSalt = b64(o.getString("ts")),
+                    memberSalt = b64(o.getString("ms")),
+                    isCreator = o.getBoolean("creator"),
+                    invites = jsonList(o.optJSONArray("invites")?.toString()),
+                    coSignerKeyHexes = jsonList(o.optJSONArray("cknh")?.toString()),
+                ))
+                // Replace, not union: the backup is the source of truth, so an approval revoked
+                // after the backup must not be resurrected if restore runs over existing state.
+                clearApproved(network, address)
+                o.optJSONArray("approved")?.let { arr ->
+                    for (i in 0 until arr.length()) markApproved(network, address, arr.getLong(i), true)
+                }
             }
         }
     }

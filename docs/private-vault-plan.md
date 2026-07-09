@@ -95,8 +95,10 @@ that order of visibility.
 
 **Residual leakage stated plainly:** transaction timing and volume, DUST fees
 (unshielded by protocol design), approval-count dynamics, and the executed-threshold
-upper bound. This is strong confidentiality, not invisibility, and the demo should say
-so — credibility is part of the demonstration.
+upper bound. The matrix above is the **target** end-state: in shipped **Tier 1** the
+treasury balance (and deposit/withdraw flows) are still **public** — money stays
+unshielded until Tier 2. This is strong confidentiality, not invisibility, and the demo
+should say so — credibility is part of the demonstration.
 
 ---
 
