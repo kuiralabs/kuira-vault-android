@@ -118,19 +118,73 @@ too" lands in Tier 3; outsiders are fully blind from Tier 1 on.
 *Delivers:* the disclosure UX (invite, join, decrypt-and-review), which is the actual
 product of this milestone.
 
-### Tier 2 — Hide the money
+### Tier 1+ — the observer surface (public, read-only)
+
+An app-only surface over the *existing* Tier 1 contract — no contract change, no SDK
+change, no viewing key. It gives selective disclosure its public face: the thing the
+world is *meant* to see, shown in the app instead of only asserted in a test.
+
+*The three personas.* One vault, read through three lenses, each defined by what it holds:
+
+- **Observer** — holds only the vault address. Can contribute and watch, nothing more.
+- **Member** — holds the viewing key + a signer salt. Reads everything, proposes/approves.
+- **Auditor** — holds the viewing key but no salt: reads everything, cannot sign. (Future;
+  the read/sign split already exists, so this is a grant, not new machinery.)
+
+*Why it's the honest demo.* Today we can *claim* outsiders learn nothing sensitive, but
+there's no in-app outsider view to hold up beside the member's. The observer surface is
+the demonstration — the public sees the pot and the governance tempo; who gets paid stays
+sealed — and it's the real-world pattern: open contribution, private decision.
+
+*What the observer sees, and doesn't.* Everything here is already public on-chain (the
+getters are permissionless view circuits; deposits carry no signer check), so this surfaces
+existing facts and adds nothing to the ledger:
+
+- Sees: treasury balance, proposal count, per-proposal approval **count** and status, and
+  can deposit.
+- Does not see: recipient, amount, signer identities or count, or the threshold. Because the
+  threshold is itself a commitment, an approval count is shown as a bare count, not "N of M";
+  the ≤-threshold bound only leaks on execution, exactly as the disclosure matrix already states.
+
+*Shape.* A third entry path beside Create and Join-with-invite — "observe by address" —
+leading to a read-only vault view whose proposals render as sealed rows (count, approvals,
+status), with contribution available. The connection persists like the public vault's
+address-only connect; no secret material is stored for an observer.
+
+*Adversarial gate.* The same bar as Tier 1's outsider test, now driven through the app's
+observer path: from the address alone it must recover no proposal recipient, amount, signer
+identity, count, or threshold — while a member still reads and verifies everything.
+
+*Honest boundary vs. the end goal.* Over Tier 1 this is a transparent pot whose money-movement
+counterparties are still visible on-chain — the depositor's address rides the deposit tx and
+execute reveals the withdrawal recipient (unshielded). The observer surface is the reusable
+public shell; the anonymity of participants ("can't see who deposited or withdrew") is the
+Tier 2 upgrade to this same shell, not something Tier 1 can provide.
+
+### Tier 2 — Hide who moves the money (transparent pot, shielded participants)
+The target is a **transparent pot with anonymous participants**: anyone sees the treasury
+balance and the governance tempo, but nobody can see WHO deposited or WHO a withdrawal paid.
+This is the property Tier 1 cannot give — unshielded transfers reveal their counterparty by
+construction (a deposit carries the sender's address; execute reveals the recipient) — so it
+is inherently a shielded-money capability, not an app surface.
+
 Swap the unshielded treasury for the vendored OZ shielded treasury (already in
 `contract/oz` at v0.3.0-alpha: shielded deposits merge into one hidden coin per token
-color; withdrawals leave as shielded notes to the recipient). The recipient's app sees
-its own incoming note; nobody else sees amount or destination.
+color; withdrawals leave as shielded notes to the recipient). The recipient's app sees its
+own incoming note; nobody else sees the depositor or the destination.
 
-*Decision inside this tier:* OZ's shielded treasury keeps public cumulative
-received/sent totals per color as an audit hook — lift them into commitments (auditor
-reads via viewing material) to match the matrix above.
+*Decision inside this tier (revised):* **keep** OZ's public cumulative balance — do NOT lift
+it into commitments. The pot is meant to be visible; only the participants are hidden. This
+is the deliberate inverse of a fully-private treasury. Known tradeoff: a live public balance
+leaks each movement's AMOUNT as a balance delta (the pot jumps +5 → a deposit of 5 happened)
+even though the who stays hidden; if amounts must also hide, reveal the balance only in
+aggregate/periodically — a later knob, not the default.
 
 *This is the SDK lift:* the contract money paths speak unshielded offers today;
 contract-held shielded coins are new SDK capability. The on-device engine already runs
-the OZ shielded ops, so the work is the wallet-side path, not the engine.
+the OZ shielded ops, so the work is the wallet-side path, not the engine. Scope it properly
+first — benchmark the shielded circuits (harness in `docs/proving-benchmark.md`) and audit
+the OZ shielded builtins for width bugs (as with the unshieldedBalance u64 report).
 
 ### Tier 3 — Hide the hand that signs
 Approve becomes an anonymous membership proof: the circuit proves "I am one of the

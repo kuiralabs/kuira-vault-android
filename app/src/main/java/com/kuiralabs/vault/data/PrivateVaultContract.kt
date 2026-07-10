@@ -279,11 +279,6 @@ internal object PrivateVaultContract {
             ),
             notIndexedTimeoutMs,
         )
-        fun ok(map: Map<String, MidnightContract.ReadOutcome>, key: String): String {
-            val r = map[key] ?: error("missing read '$key'")
-            r.error?.let { throw CircuitExecutionException("PrivateVault read '$key' failed: $it") }
-            return r.json!!
-        }
         val count = jsonScalar(ok(header, "count")).toLong()
         val balance = BigInteger(jsonScalar(ok(header, "balance")))
         if (count == 0L) return MemberSnapshot(balance, emptyList())
@@ -312,6 +307,50 @@ internal object PrivateVaultContract {
             }
         }
         return MemberSnapshot(balance, proposals)
+    }
+
+    /**
+     * The OBSERVER view — the public facts a non-member reads from chain WITHOUT a viewing key:
+     * treasury balance + each proposal's status and approval count. The ciphertext payload is NOT
+     * fetched (an observer can't decrypt it), so every proposal comes back sealed (readable=false,
+     * empty recipient/amount). All reads are permissionless view circuits.
+     */
+    suspend fun observerSnapshot(
+        handle: MidnightContract, color: ByteArray, notIndexedTimeoutMs: Long = 0,
+    ): MemberSnapshot {
+        val header = handle.readMany(
+            listOf(
+                MidnightContract.ReadRequest("count", "getProposalCount"),
+                MidnightContract.ReadRequest("balance", "getUnshieldedBalance", listOf(color)),
+            ),
+            notIndexedTimeoutMs,
+        )
+        val count = jsonScalar(ok(header, "count")).toLong()
+        val balance = BigInteger(jsonScalar(ok(header, "balance")))
+        if (count == 0L) return MemberSnapshot(balance, emptyList())
+
+        val results = handle.readMany((0 until count).flatMap { id ->
+            listOf(
+                MidnightContract.ReadRequest("s:$id", "getProposalStatus", listOf(BigInteger.valueOf(id))),
+                MidnightContract.ReadRequest("a:$id", "getApprovalCount", listOf(BigInteger.valueOf(id))),
+            )
+        }, notIndexedTimeoutMs)
+        val proposals = (0 until count).map { id ->
+            MemberProposal(
+                id = id, recipientHashHex = "", amount = BigInteger.ZERO,
+                status = jsonScalar(ok(results, "s:$id")).toInt(),
+                approvals = jsonScalar(ok(results, "a:$id")).toInt(),
+                readable = false,
+            )
+        }
+        return MemberSnapshot(balance, proposals)
+    }
+
+    /** Pull one batched read out of a [readMany] result, surfacing a read error as an exception. */
+    private fun ok(map: Map<String, MidnightContract.ReadOutcome>, key: String): String {
+        val r = map[key] ?: error("missing read '$key'")
+        r.error?.let { throw CircuitExecutionException("PrivateVault read '$key' failed: $it") }
+        return r.json!!
     }
 
     // PrivateProposalStatus ordinals: Inactive=0, Active=1, Executed=2.

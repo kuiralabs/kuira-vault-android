@@ -17,6 +17,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
@@ -132,6 +133,17 @@ class PrivateVaultDeployE2ETest {
         assertTrue("roster must NOT contain Bob's public key",
             !rosterDump.contains(bob.coinPublicKey.toHex(), ignoreCase = true))
         Log.i(TAG, "Adversarial read: outsider recovered NOTHING (commitment/ciphertext/roster all opaque)")
+
+        // ══ OBSERVER path: the public read-only persona sees the pot + counts, contents sealed ══
+        val observed = PrivateVaultContract.observerSnapshot(reader, ByteArray(32))
+        assertEquals("observer sees the treasury balance", BigInteger.valueOf(5_000_000L), observed.balance)
+        assertEquals("observer sees the proposal count", 1, observed.proposals.size)
+        val op = observed.proposals[0]
+        assertEquals("observer sees the approval count", 2, op.approvals)
+        assertFalse("observer proposal must be sealed (no viewing key)", op.readable)
+        assertEquals("observer recovers no recipient", "", op.recipientHashHex)
+        assertEquals("observer recovers no amount", BigInteger.ZERO, op.amount)
+        Log.i(TAG, "Observer read: pot + approval count visible, proposal contents sealed")
 
         // ── Execute (any member with the viewing key + threshold salt) ──
         var executeSubmitted = false

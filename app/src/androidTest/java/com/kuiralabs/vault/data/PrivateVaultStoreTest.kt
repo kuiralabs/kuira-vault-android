@@ -50,6 +50,7 @@ class PrivateVaultStoreTest {
     private fun wipe() {
         store.clear(net, vaultA)
         store.clear(net, vaultB)
+        store.clearObserver(net)
     }
 
     @Test
@@ -147,6 +148,17 @@ class PrivateVaultStoreTest {
         blob.getJSONObject("nets").put("PREVIEW", JSONObject().put("th", 1))
         store.restoreFromBytes(blob.toString().toByteArray())
         assertEquals(vaultA, store.get(net)?.address)  // healthy network restored despite bad sibling
+    }
+
+    @Test
+    fun observer_roundTrips_andIsSeparateFromMembership() {
+        assertNull(store.getObserver(net))
+        store.saveObserver(net, vaultA)
+        assertEquals(vaultA, store.getObserver(net))
+        // An observer connection holds no secret material and does NOT create membership.
+        assertNull(store.get(net))
+        store.clearObserver(net)
+        assertNull(store.getObserver(net))
     }
 
     private fun rawPrefs() = EncryptedSharedPreferences.create(

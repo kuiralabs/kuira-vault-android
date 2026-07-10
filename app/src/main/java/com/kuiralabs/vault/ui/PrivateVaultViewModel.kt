@@ -71,10 +71,13 @@ class PrivateVaultViewModel @Inject constructor(
 
     private fun onSdkOrNetworkChanged(sdk: MidnightSdk?, network: MidnightNetwork) {
         val membership = store.get(network)
+        val observerAddress = store.getObserver(network)
         when {
             sdk == null -> { _state.value = PrivateVaultUiState.NotReady; stopStreams() }
-            membership == null -> { _state.value = PrivateVaultUiState.ReadyToStart; stopStreams() }
-            else -> { refresh(sdk, membership, network); startApprovalStream(sdk, membership.address) }
+            // Membership takes priority; an observer connection is the fallback.
+            membership != null -> { refresh(sdk, membership, network); startApprovalStream(sdk, membership.address) }
+            observerAddress != null -> { refreshObserver(sdk, observerAddress, network); startApprovalStream(sdk, observerAddress) }
+            else -> { _state.value = PrivateVaultUiState.ReadyToStart; stopStreams() }
         }
     }
 
@@ -138,6 +141,43 @@ class PrivateVaultViewModel @Inject constructor(
             _error.value = null
             startApprovalStream(sdk, membership.address)
         }
+    }
+
+    /** Observe a vault by address — no invite, no viewing key. The public read-only persona. */
+    fun observe(addressInput: String) {
+        val sdk = sdkProvider.sdk.value ?: return
+        val network = sdkProvider.selectedNetwork.value
+        val address = addressInput.trim().lowercase()
+        if (address.length != 64 || address.any { it !in "0123456789abcdef" }) {
+            _error.value = "That's not a vault address — paste the 64-character address the members shared."
+            return
+        }
+        runAction {
+            // Read once before persisting, so a bad/indexer-lagging address doesn't strand the UI.
+            val loaded = loadObserver(sdk, address) ?: return@runAction
+            store.saveObserver(network, address)
+            _state.value = loaded
+            _error.value = null
+            startApprovalStream(sdk, address)
+        }
+    }
+
+    /** A contribution from an observer — deposits are permissionless (no membership needed). */
+    fun observerDeposit(amountBase: BigInteger) {
+        val sdk = sdkProvider.sdk.value ?: return
+        val network = sdkProvider.selectedNetwork.value
+        val address = store.getObserver(network) ?: return
+        runAction {
+            PrivateVaultContract.depositUnshielded(context, sdk, address, NATIVE_COLOR, amountBase) { _callStage.value = it }
+            refreshObserver(sdk, address, network)
+        }
+    }
+
+    /** Stop observing → back to ReadyToStart (nothing on-chain changes). */
+    fun stopObserving() {
+        val network = sdkProvider.selectedNetwork.value
+        store.clearObserver(network)
+        onSdkOrNetworkChanged(sdkProvider.sdk.value, network)
     }
 
     fun deposit(amountBase: BigInteger) = withVault { sdk, _, m ->
@@ -266,6 +306,39 @@ class PrivateVaultViewModel @Inject constructor(
         )
     }
 
+    private suspend fun loadObserver(
+        sdk: MidnightSdk, address: String, notIndexedTimeoutMs: Long = 60_000L,
+    ): PrivateVaultUiState.Observer? {
+        return try {
+            val snap = PrivateVaultContract.observerSnapshot(readHandleFor(sdk, address), NATIVE_COLOR, notIndexedTimeoutMs)
+            PrivateVaultUiState.Observer(
+                address = address,
+                treasuryBalance = snap.balance,
+                proposals = snap.proposals.map {
+                    ObserverProposalView(it.id, it.approvals, it.status == PrivateVaultContract.STATUS_EXECUTED)
+                },
+            )
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.e(TAG, "Observer chain read failed", e)
+            _error.value = "Read failed: ${e.message}"
+            null
+        }
+    }
+
+    private fun refreshObserver(sdk: MidnightSdk, address: String, network: MidnightNetwork) {
+        refreshJob?.cancel()
+        refreshJob = viewModelScope.launch {
+            if (store.getObserver(network) != address) return@launch // stopped observing meanwhile
+            val prev = _state.value as? PrivateVaultUiState.Observer
+            if (prev != null) _state.value = prev.copy(refreshing = true)
+            val loaded = loadObserver(sdk, address)
+            if (loaded != null) { _state.value = loaded; _error.value = null }
+            else if (prev != null) _state.value = prev.copy(refreshing = false)
+        }
+    }
+
     private fun startApprovalStream(sdk: MidnightSdk, address: String) {
         approvalStreamJob?.cancel()
         approvalStreamJob = viewModelScope.launch {
@@ -277,8 +350,11 @@ class PrivateVaultViewModel @Inject constructor(
                     true
                 }
                 .collect {
-                    val m = store.get(network) ?: return@collect
-                    refresh(sdk, m, network)
+                    val m = store.get(network)
+                    when {
+                        m != null -> refresh(sdk, m, network)
+                        store.getObserver(network) == address -> refreshObserver(sdk, address, network)
+                    }
                 }
         }
     }

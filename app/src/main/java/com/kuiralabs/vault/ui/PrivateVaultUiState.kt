@@ -15,6 +15,17 @@ import java.math.BigInteger
 sealed interface PrivateVaultUiState {
     data object NotReady : PrivateVaultUiState
     data object ReadyToStart : PrivateVaultUiState
+    /**
+     * The public, read-only view of a vault this device only OBSERVES (address, no viewing key).
+     * The pot balance and per-proposal approval counts are public chain facts; proposal contents
+     * stay sealed. An observer can still contribute (deposits are permissionless).
+     */
+    data class Observer(
+        val address: String,
+        val treasuryBalance: BigInteger,
+        val proposals: List<ObserverProposalView>,
+        val refreshing: Boolean = false,
+    ) : PrivateVaultUiState
     data class Member(
         val address: String,
         val threshold: Int,
@@ -48,3 +59,13 @@ data class PrivateProposalView(
 ) {
     val thresholdMet: Boolean get() = approvals >= threshold
 }
+
+/**
+ * A proposal as an OBSERVER sees it: only the public facts. No recipient/amount (sealed), and no
+ * threshold (it's a commitment) — so the approval count is shown bare, not "N of M".
+ */
+data class ObserverProposalView(
+    val id: Long,
+    val approvals: Int,
+    val executed: Boolean,
+)

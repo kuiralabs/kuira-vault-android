@@ -66,6 +66,13 @@ fun PrivateVaultCard(
                     mySignerKeyHex = viewModel.mySignerKeyHex(),
                     onCreate = viewModel::create,
                     onJoin = viewModel::join,
+                    onObserve = viewModel::observe,
+                )
+                is PrivateVaultUiState.Observer -> ObserverBody(
+                    state = s,
+                    busy = busy,
+                    onDeposit = viewModel::observerDeposit,
+                    onStop = viewModel::stopObserving,
                 )
                 is PrivateVaultUiState.Member -> MemberBody(
                     state = s,
@@ -106,6 +113,7 @@ private fun StartBody(
     mySignerKeyHex: String?,
     onCreate: (Int, List<String>) -> Unit,
     onJoin: (String) -> Unit,
+    onObserve: (String) -> Unit,
 ) {
     // Default threshold 1 so the very first tap succeeds solo (mirrors the public vault); the
     // signer count grows as co-signer keys are filled in.
@@ -113,6 +121,7 @@ private fun StartBody(
     var coSigner2 by remember { mutableStateOf("") }
     var coSigner3 by remember { mutableStateOf("") }
     var inviteText by remember { mutableStateOf("") }
+    var observeAddr by remember { mutableStateOf("") }
     val clipboard = LocalClipboardManager.current
 
     val signerCount = 1 + listOf(coSigner2, coSigner3).count { it.isNotBlank() }
@@ -172,6 +181,23 @@ private fun StartBody(
         onClick = { onJoin(inviteText) },
         enabled = !busy && inviteText.isNotBlank(), modifier = Modifier.fillMaxWidth(),
     ) { Text("Join vault") }
+
+    HorizontalDivider()
+
+    Text("Or watch a vault (no invite)", style = MaterialTheme.typography.titleSmall)
+    Text(
+        "Paste a vault's address to follow it as an observer: you'll see the pot balance and how many " +
+            "have approved each proposal, and you can contribute. Contents stay sealed — no viewing key needed.",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    OutlinedTextField(
+        value = observeAddr, onValueChange = { observeAddr = it },
+        label = { Text("Vault address (64 hex)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+    )
+    OutlinedButton(
+        onClick = { onObserve(observeAddr) },
+        enabled = !busy && observeAddr.isNotBlank(), modifier = Modifier.fillMaxWidth(),
+    ) { Text("Observe vault") }
 }
 
 @Composable
@@ -331,5 +357,74 @@ private fun ProposalRow(
                 TextButton(onClick = { onRevoke(p.id) }, enabled = !busy) { Text("Revoke") }
             }
         }
+    }
+}
+
+// The observer (public, read-only) view: the pot + approval counts are public chain facts; proposal
+// contents are sealed. Contributing is allowed (deposits are permissionless). No secret material.
+@Composable
+private fun ObserverBody(
+    state: PrivateVaultUiState.Observer,
+    busy: Boolean,
+    onDeposit: (BigInteger) -> Unit,
+    onStop: () -> Unit,
+) {
+    var depositAmt by remember { mutableStateOf("") }
+    val clipboard = LocalClipboardManager.current
+
+    Text("Observing a private vault" + if (state.refreshing) " · refreshing…" else "",
+        style = MaterialTheme.typography.titleSmall)
+    Text(
+        "Public view: you see the pot and how many approved each proposal — not who deposited, who a " +
+            "withdrawal pays, or the amounts. In this tier the money moves in the clear on-chain; full " +
+            "participant privacy comes with the shielded treasury.",
+        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
+    Text("${state.address.take(20)}…${state.address.takeLast(8)}",
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Text("Treasury: ${baseToNight(state.treasuryBalance)} NIGHT", style = MaterialTheme.typography.headlineSmall)
+
+    HorizontalDivider()
+    Text("Contribute NIGHT", style = MaterialTheme.typography.titleSmall)
+    Text("Anyone can add to the pot — no membership needed.",
+        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        OutlinedTextField(
+            value = depositAmt, onValueChange = { depositAmt = it },
+            label = { Text("NIGHT") }, singleLine = true, modifier = Modifier.weight(1f),
+        )
+        Button(
+            onClick = { nightToBase(depositAmt)?.let { onDeposit(it); depositAmt = "" } },
+            enabled = !busy && nightToBase(depositAmt) != null,
+        ) { Text("Deposit") }
+    }
+
+    if (state.proposals.isNotEmpty()) {
+        HorizontalDivider()
+        Text("Proposals", style = MaterialTheme.typography.titleSmall)
+        Text("Sealed — only members can read a proposal's recipient and amount. The approval count is public.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        state.proposals.forEach { ObserverProposalRow(it) }
+    }
+
+    HorizontalDivider()
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        TextButton(onClick = { clipboard.setText(AnnotatedString(state.address)) }) { Text("Copy vault address") }
+        TextButton(onClick = onStop) { Text("Stop observing") }
+    }
+}
+
+@Composable
+private fun ObserverProposalRow(p: ObserverProposalView) {
+    Column(Modifier.fillMaxWidth().padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Text("🔒 Private proposal #${p.id + 1}", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            val (chip, color) = if (p.executed) "✓ Completed" to MaterialTheme.colorScheme.tertiary
+                else "Pending" to MaterialTheme.colorScheme.onSurfaceVariant
+            Text(chip, style = MaterialTheme.typography.labelMedium, color = color)
+        }
+        // Bare count, not "N of M" — the threshold is a commitment, hidden from an observer.
+        Text("${p.approvals} approval(s)", style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

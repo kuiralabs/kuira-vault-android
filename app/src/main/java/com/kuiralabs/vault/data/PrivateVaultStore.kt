@@ -141,6 +141,18 @@ class PrivateVaultStore @Inject constructor(
 
     private fun approvedKey(network: MidnightNetwork, address: String) = "pvault.approved.${network.name}.$address"
 
+    // ── Observer connection (public, read-only) ──
+    // A non-member who "observes a vault by address" holds NO secret material — just the address,
+    // stored like the public vault's address-only connect. Membership takes priority in the UI
+    // state; this is the fallback. Kept out of the cloud backup: it's trivially re-established by
+    // re-pasting the address, so there's nothing worth protecting or restoring.
+    fun saveObserver(network: MidnightNetwork, address: String) =
+        prefs.edit().putString(k(network, "observer"), address).apply()
+
+    fun getObserver(network: MidnightNetwork): String? = prefs.getString(k(network, "observer"), null)
+
+    fun clearObserver(network: MidnightNetwork) = prefs.edit().remove(k(network, "observer")).apply()
+
     // ── Cloud-backup round-trip (rides the Sigil app-data backup) ──
     // A reinstall wipes EncryptedSharedPreferences, so without this a member loses their whole vault
     // (viewing key + salts are unrecoverable — the on-chain state is opaque) and their approval
