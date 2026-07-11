@@ -1,8 +1,10 @@
 package com.kuiralabs.vault.data
 
 import android.content.Context
+import com.midnight.kuira.contract.generated.Recipient
+import com.midnight.kuira.contract.generated.RecipientKind
+import com.midnight.kuira.contract.generated.VaultContract as GeneratedVault
 import com.midnight.kuira.core.compact.CircuitExecutionException
-import com.midnight.kuira.core.compact.CompactEnum
 import com.midnight.kuira.core.compact.ContractCallStage
 import com.midnight.kuira.core.compact.MidnightContract
 import com.midnight.kuira.core.compact.proving.ProvingKeyManager
@@ -146,12 +148,14 @@ internal object VaultContract {
             context, sdk, address = address, forWrite = true,
             constructorArgs = callConstructorArgs(),
         )
-        // Recipient { kind: RecipientKind (enum, JS number), address: Bytes<32> }.
-        val recipient = mapOf(
-            "kind" to CompactEnum(RECIPIENT_KIND_UNSHIELDED_USER),
-            "address" to recipientAddressHash,
+        // Typed generated facade: the Recipient struct + RecipientKind enum marshal themselves
+        // (kind -> CompactEnum(ordinal), address -> Bytes) — replacing the hand-built JS-object map.
+        GeneratedVault(handle).proposeWithdrawal(
+            to = Recipient(kind = RecipientKind.UnshieldedUser, address = recipientAddressHash),
+            color = color,
+            amount = amount,
+            onProgress = onProgress,
         )
-        handle.call("proposeWithdrawal", recipient, color, amount, onProgress = onProgress)
     }
 
     /**
@@ -431,7 +435,6 @@ internal object VaultContract {
         else -> v.toString()
     }
 
-    private const val RECIPIENT_KIND_UNSHIELDED_USER = 1
     private const val LEDGER_APPROVAL_COUNT = "_approvalCount"
 
     private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
