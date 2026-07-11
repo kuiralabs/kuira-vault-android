@@ -375,8 +375,9 @@ private fun ObserverBody(
     Text("Observing a private vault" + if (state.refreshing) " · refreshing…" else "",
         style = MaterialTheme.typography.titleSmall)
     Text(
-        "Public view: you see the pot and how many approved each proposal — not who deposited, who a " +
-            "withdrawal pays, or the amounts. In this tier the money moves in the clear on-chain; full " +
+        "Public view: here you see the pot and how many approved each proposal — pending proposals' " +
+            "recipients and amounts stay sealed. But in this tier the money moves as public transfers " +
+            "on-chain, so a chain observer can still see who deposited and who a withdrawal paid. Full " +
             "participant privacy comes with the shielded treasury.",
         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
