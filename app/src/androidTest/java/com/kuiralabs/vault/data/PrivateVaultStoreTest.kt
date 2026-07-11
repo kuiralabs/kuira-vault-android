@@ -161,6 +161,20 @@ class PrivateVaultStoreTest {
         assertNull(store.getObserver(net))
     }
 
+    /**
+     * Membership and observer must be mutually exclusive: becoming a member clears any prior observer
+     * on that network. Otherwise the pair lingers and the UI state resolver — which prefers
+     * membership and falls back to observer — drops a member who later disconnects into observer mode
+     * instead of ReadyToStart (the regression). Reproduces observe→become-member→(disconnect).
+     */
+    @Test
+    fun save_clearsAnyPriorObserver_soTheyNeverCoexist() {
+        store.saveObserver(net, vaultB)          // was observing vault B
+        store.save(net, membership(vaultA))       // then became a member of vault A
+        assertEquals(vaultA, store.get(net)?.address)
+        assertNull("becoming a member must clear the stale observer", store.getObserver(net))
+    }
+
     private fun rawPrefs() = EncryptedSharedPreferences.create(
         ApplicationProvider.getApplicationContext(),
         "kuira-private-vault-prefs",

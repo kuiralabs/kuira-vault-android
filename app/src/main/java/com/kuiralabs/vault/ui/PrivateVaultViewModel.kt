@@ -152,6 +152,13 @@ class PrivateVaultViewModel @Inject constructor(
             _error.value = "That's not a vault address — paste the 64-character address the members shared."
             return
         }
+        // Observing is the non-member persona. If this device is already a member on this network,
+        // the member view supersedes it — don't downgrade to a read-only observer (and don't strand a
+        // member/observer pair the state resolver would then disagree about).
+        if (store.get(network) != null) {
+            _error.value = "You're already a member of a vault on this network — disconnect first to observe another."
+            return
+        }
         runAction {
             // Read once before persisting, so a bad/indexer-lagging address doesn't strand the UI.
             val loaded = loadObserver(sdk, address) ?: return@runAction
@@ -221,7 +228,12 @@ class PrivateVaultViewModel @Inject constructor(
         ) { _callStage.value = it }
     }
 
-    /** Forget this vault on this device → ReadyToStart (the on-chain contract isn't destroyed). */
+    /**
+     * Forget this vault on this device → ReadyToStart (the on-chain contract isn't destroyed).
+     * Lands on ReadyToStart, never observer: a member never carries an observer entry (the store
+     * keeps the two mutually exclusive — see [PrivateVaultStore.save]), so after clearing membership
+     * the resolver finds no observer fallback to drop into.
+     */
     fun disconnect() {
         val network = sdkProvider.selectedNetwork.value
         store.clear(network, store.get(network)?.address)

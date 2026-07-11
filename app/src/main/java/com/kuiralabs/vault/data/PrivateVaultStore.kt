@@ -85,6 +85,12 @@ class PrivateVaultStore @Inject constructor(
             .putBoolean(k(network, "creator"), m.isCreator)
             .putString(k(network, "invites"), JSONArray(m.invites).toString())
             .putString(k(network, "cosignerKeys"), JSONArray(m.coSignerKeyHexes).toString())
+            // Becoming a member supersedes any prior observer connection on this network: the UI
+            // resolves membership first and treats the observer as the fallback, so a lingering
+            // observer entry would make disconnect() drop into observer mode instead of ReadyToStart.
+            // Clearing it here keeps "member" and "observer" mutually exclusive at the source (the
+            // observer is just an address — trivially re-established by re-pasting it).
+            .remove(k(network, "observer"))
             .apply()
     }
 
