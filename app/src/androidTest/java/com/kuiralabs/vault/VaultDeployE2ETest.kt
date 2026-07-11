@@ -4,6 +4,9 @@ import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.kuiralabs.vault.data.VaultContract
+import com.midnight.kuira.contract.generated.ProposalStatus
+import com.midnight.kuira.contract.generated.RecipientKind
+import com.midnight.kuira.contract.generated.VaultContract as GeneratedVault
 import com.midnight.kuira.core.compact.ContractCallException
 import com.midnight.kuira.core.crypto.address.Bech32m
 import com.midnight.kuira.core.compact.proving.ProvingKeyManager
@@ -135,6 +138,33 @@ class VaultDeployE2ETest {
             VaultContract.PROPOSAL_STATUS_ACTIVE,
             onChain.status,
         )
+
+        // GENERATED-API PROOF: the plugin-generated typed facade (read<Name> + result decoders) must
+        // agree with the hand-written reads against the SAME on-chain state — proving the codegen's
+        // read path, scalar/enum decode, and the Struct/nested-Struct/Bytes decoder (getProposal)
+        // work on a live contract, not just by inspection. Same `reader` handle, same chain state.
+        val gen = GeneratedVault(reader)
+        assertEquals("gen: threshold", BigInteger.valueOf(2), gen.readGetThreshold())
+        assertEquals("gen: signer count", BigInteger.valueOf(3), gen.readGetSignerCount())
+        assertEquals(
+            "gen: treasury balance",
+            BigInteger.valueOf(5_000_000L),
+            gen.readGetUnshieldedBalance(ByteArray(32)),
+        )
+        val genProposal = gen.readGetProposal(BigInteger.valueOf(FIRST_PROPOSAL_ID))
+        assertEquals("gen: proposal amount", BigInteger.valueOf(2_000_000L), genProposal.amount)
+        assertEquals("gen: proposal status decodes to the typed enum", ProposalStatus.Active, genProposal.status)
+        assertEquals("gen: proposal recipient kind", RecipientKind.UnshieldedUser, genProposal.to.kind)
+        assertTrue(
+            "gen: proposal recipient address (Bytes) decodes to the proposed hash",
+            genProposal.to.address.contentEquals(recipientHash),
+        )
+        assertEquals(
+            "gen: getProposalStatus scalar-enum read",
+            ProposalStatus.Active,
+            gen.readGetProposalStatus(BigInteger.valueOf(FIRST_PROPOSAL_ID)),
+        )
+        Log.i(TAG, "Generated facade reads agree with the hand-written reads on-chain")
 
         // read: the Connect flow's reads — enumerate proposals + check signer membership.
         val listed = VaultContract.listProposals(reader)
