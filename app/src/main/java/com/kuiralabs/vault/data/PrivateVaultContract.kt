@@ -2,6 +2,11 @@ package com.kuiralabs.vault.data
 
 import android.content.Context
 import com.midnight.kuira.contract.generated.privatevault.PrivateVaultContract as GeneratedPrivateVault
+import com.midnight.kuira.contract.generated.privatevault.decodeGetApprovalCountResult
+import com.midnight.kuira.contract.generated.privatevault.decodeGetProposalCountResult
+import com.midnight.kuira.contract.generated.privatevault.decodeGetProposalPayloadResult
+import com.midnight.kuira.contract.generated.privatevault.decodeGetProposalStatusResult
+import com.midnight.kuira.contract.generated.privatevault.decodeGetUnshieldedBalanceResult
 import com.midnight.kuira.core.compact.CircuitExecutionException
 import com.midnight.kuira.core.compact.ContractCallStage
 import com.midnight.kuira.core.compact.MidnightContract
@@ -68,26 +73,20 @@ internal object PrivateVaultContract {
         ByteArray(32) { 0x7f },
     )
 
-    private fun hexToBytes(hex: String): ByteArray {
-        val h = hex.removePrefix("0x")
-        return ByteArray(h.length / 2) { ((h[it * 2].digitToInt(16) shl 4) or h[it * 2 + 1].digitToInt(16)).toByte() }
-    }
-
-    /** Parse a readLocal/read Bytes<32> result (a quoted hex string) to raw bytes. */
-    private fun readBytes(json: String): ByteArray = hexToBytes(jsonScalar(json))
-
-    // ── Commitments: computed by the contract's own pure circuits (readLocal), no deploy needed ──
+    // ── Commitments: the contract's own PURE circuits, computed via the generated facade's
+    //    local<Name>() (handle.readLocal against initialState() — no deployed instance needed). The
+    //    generated decoder returns the raw Bytes<32> as a ByteArray. ──
 
     private suspend fun signerCommitment(h: MidnightContract, pk: ByteArray, salt: ByteArray): ByteArray =
-        readBytes(h.readLocal("signerCommitment", pk, salt))
+        GeneratedPrivateVault(h).localSignerCommitment(pk, salt)
 
     private suspend fun thresholdCommitment(h: MidnightContract, threshold: Int, salt: ByteArray): ByteArray =
-        readBytes(h.readLocal("thresholdCommitment", BigInteger.valueOf(threshold.toLong()), salt))
+        GeneratedPrivateVault(h).localThresholdCommitment(BigInteger.valueOf(threshold.toLong()), salt)
 
     private suspend fun proposalCommitment(h: MidnightContract, p: PrivateVaultCrypto.Preimage): ByteArray =
-        readBytes(h.readLocal(
-            "proposalCommitment", p.recipientIsContract, p.recipient, p.color, p.amount, p.nonce,
-        ))
+        GeneratedPrivateVault(h).localProposalCommitment(
+            p.recipientIsContract, p.recipient, p.color, p.amount, p.nonce,
+        )
 
     /** Everything deploy mints: the vault address plus the material members need to join and act. */
     data class DeployResult(
@@ -180,7 +179,7 @@ internal object PrivateVaultContract {
         )
         val commitment = proposalCommitment(handle, preimage)
         val payload = PrivateVaultCrypto.encryptPreimage(viewingKey, preimage)
-        handle.call("pvProposeWithdrawal", commitment, payload, memberSalt, onProgress = onProgress)
+        GeneratedPrivateVault(handle).pvProposeWithdrawal(commitment, payload, memberSalt, onProgress = onProgress)
     }
 
     suspend fun approve(
@@ -189,7 +188,7 @@ internal object PrivateVaultContract {
     ) {
         ProvingKeyManager(context).installCircuitKeysFromAssets(KEYS_DIR)
         val handle = buildHandle(context, sdk, address, forWrite = true, constructorArgs = callConstructorArgs())
-        handle.call("pvApprove", BigInteger.valueOf(proposalId), memberSalt, onProgress = onProgress)
+        GeneratedPrivateVault(handle).pvApprove(BigInteger.valueOf(proposalId), memberSalt, onProgress = onProgress)
     }
 
     suspend fun revokeApproval(
@@ -198,7 +197,7 @@ internal object PrivateVaultContract {
     ) {
         ProvingKeyManager(context).installCircuitKeysFromAssets(KEYS_DIR)
         val handle = buildHandle(context, sdk, address, forWrite = true, constructorArgs = callConstructorArgs())
-        handle.call("pvRevokeApproval", BigInteger.valueOf(proposalId), memberSalt, onProgress = onProgress)
+        GeneratedPrivateVault(handle).pvRevokeApproval(BigInteger.valueOf(proposalId), memberSalt, onProgress = onProgress)
     }
 
     /**
@@ -213,7 +212,7 @@ internal object PrivateVaultContract {
     ) {
         ProvingKeyManager(context).installCircuitKeysFromAssets(KEYS_DIR)
         val handle = buildHandle(context, sdk, address, forWrite = true, constructorArgs = callConstructorArgs())
-        val payload = readBytes(handle.read("getProposalPayload", BigInteger.valueOf(proposalId)))
+        val payload = GeneratedPrivateVault(handle).readGetProposalPayload(BigInteger.valueOf(proposalId))
         val p = PrivateVaultCrypto.decryptPreimage(viewingKey, payload)
 
         val withdrawalJson = sdk.buildUnshieldedWithdrawalJson(
@@ -260,7 +259,7 @@ internal object PrivateVaultContract {
 
     /** Treasury balance for [color] — a single view-call read (the batched path is [loadSnapshot]). */
     suspend fun getUnshieldedBalance(handle: MidnightContract, color: ByteArray): BigInteger =
-        BigInteger(jsonScalar(handle.read("getUnshieldedBalance", color)))
+        GeneratedPrivateVault(handle).readGetUnshieldedBalance(color)
 
     /** The whole member view, read in batched snapshots: treasury balance + decrypted proposals. */
     data class MemberSnapshot(val balance: BigInteger, val proposals: List<MemberProposal>)
@@ -282,8 +281,10 @@ internal object PrivateVaultContract {
             ),
             notIndexedTimeoutMs,
         )
-        val count = jsonScalar(ok(header, "count")).toLong()
-        val balance = BigInteger(jsonScalar(ok(header, "balance")))
+        // Decode each batched read with the SAME generated result decoders the read<Name>()/local<Name>()
+        // methods use — one decode shared across the batched and single-read paths.
+        val count = decodeGetProposalCountResult(ok(header, "count")).toLong()
+        val balance = decodeGetUnshieldedBalanceResult(ok(header, "balance"))
         if (count == 0L) return MemberSnapshot(balance, emptyList())
 
         val results = handle.readMany((0 until count).flatMap { id ->
@@ -294,13 +295,13 @@ internal object PrivateVaultContract {
             )
         }, notIndexedTimeoutMs)
         val proposals = (0 until count).map { id ->
-            val status = jsonScalar(ok(results, "s:$id")).toInt()
-            val approvals = jsonScalar(ok(results, "a:$id")).toInt()
+            val status = decodeGetProposalStatusResult(ok(results, "s:$id")).ordinal
+            val approvals = decodeGetApprovalCountResult(ok(results, "a:$id")).toInt()
             // A proposal's commitment and ciphertext are independent contract args, so a signer CAN
             // store a garbage/wrong-key payload. Guard EACH decrypt so one unreadable proposal can't
             // fail the whole snapshot (a view-DoS) — surface it as an unreadable row instead.
             val decrypted = runCatching {
-                PrivateVaultCrypto.decryptPreimage(viewingKey, hexToBytes(jsonScalar(ok(results, "y:$id"))))
+                PrivateVaultCrypto.decryptPreimage(viewingKey, decodeGetProposalPayloadResult(ok(results, "y:$id")))
             }.getOrNull()
             if (decrypted != null) {
                 MemberProposal(id, decrypted.recipient.toHex(),
@@ -328,8 +329,8 @@ internal object PrivateVaultContract {
             ),
             notIndexedTimeoutMs,
         )
-        val count = jsonScalar(ok(header, "count")).toLong()
-        val balance = BigInteger(jsonScalar(ok(header, "balance")))
+        val count = decodeGetProposalCountResult(ok(header, "count")).toLong()
+        val balance = decodeGetUnshieldedBalanceResult(ok(header, "balance"))
         if (count == 0L) return MemberSnapshot(balance, emptyList())
 
         val results = handle.readMany((0 until count).flatMap { id ->
@@ -341,8 +342,8 @@ internal object PrivateVaultContract {
         val proposals = (0 until count).map { id ->
             MemberProposal(
                 id = id, recipientHashHex = "", amount = BigInteger.ZERO,
-                status = jsonScalar(ok(results, "s:$id")).toInt(),
-                approvals = jsonScalar(ok(results, "a:$id")).toInt(),
+                status = decodeGetProposalStatusResult(ok(results, "s:$id")).ordinal,
+                approvals = decodeGetApprovalCountResult(ok(results, "a:$id")).toInt(),
                 readable = false,
             )
         }
@@ -360,6 +361,5 @@ internal object PrivateVaultContract {
     const val STATUS_ACTIVE = 1
     const val STATUS_EXECUTED = 2
 
-    private fun jsonScalar(json: String): String = org.json.JSONTokener(json).nextValue().toString()
     private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
 }
