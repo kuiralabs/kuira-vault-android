@@ -58,41 +58,26 @@ kotlin {
 }
 
 // ─── Contract assets ───────────────────────────────────────────────
-// The io.github.kuiralabs.contract plugin syncs the compiled Compact
-// artifacts from the contract source into the app's assets before each
-// build: the runtime JS as assets/runtime/vault-contract.js and each
-// circuit's keys as assets/keys/<circuit>.{prover,verifier,bzkir}.
-// VaultContract reads those canonical paths at runtime.
+// The io.github.kuiralabs.contract plugin syncs BOTH contracts' compiled Compact artifacts into
+// the app's assets before each build, via the contracts{} container. Each contract's circuit keys
+// go to a per-alias dir (<alias>-keys) so the public Vault and the PrivateVault — which share the
+// circuit names getProposalStatus / getApprovalCount / getUnshieldedBalance — don't overwrite each
+// other's keys. The runtime JS is alias-named in assets/runtime/. VaultContract / PrivateVaultContract
+// read these paths via the generated facades' RUNTIME_ASSET / KEYS_ASSET_DIR constants (no magic
+// strings). The private sibling keeps alias "private-vault" so its asset names are unchanged.
 kuiraContract {
-    source.set("../contract/src/managed/Vault")
-    alias.set("vault")
+    contracts {
+        register("vault") { source.set("../contract/src/managed/Vault") }
+        register("privateVault") {
+            source.set("../contract/src/managed/PrivateVault")
+            alias.set("private-vault")
+        }
+    }
     // Offline bundle (#256): ship the protocol wallet proving keys in the APK so a
     // fresh device proves without the runtime S3 download. ~33MB; downloaded once
     // at build time into a shared Gradle cache, then staged into assets/wallet-keys.
     bundleWalletKeys.set(true)
 }
-
-// ─── Private Vault contract assets (second contract) ───────────────
-// The contract plugin syncs ONE contract (the public Vault above). The private
-// sibling is synced by hand into DEDICATED asset dirs so its keys stay separate
-// from the public vault's — its impure circuits are renamed (pv*) so proving
-// keys never collide, and dedicated dirs keep verifier-key loading unambiguous.
-// Source of truth is the committed contract/src/managed/PrivateVault; these
-// asset dirs are generated (gitignored), same model as the plugin's output.
-val syncPrivateVaultRuntime by tasks.registering(Copy::class) {
-    from("../contract/src/managed/PrivateVault/contract/index.js")
-    into(layout.projectDirectory.dir("src/main/assets/private-vault-runtime"))
-    rename { "private-vault-contract.js" }
-}
-val syncPrivateVaultKeys by tasks.registering(Copy::class) {
-    // compact compile splits a circuit's key set across two dirs: keys/ holds .prover + .verifier,
-    // zkir/ holds the .bzkir circuit IR. Local proving needs ALL THREE, so pull the .bzkir too —
-    // the contract plugin does this for the public vault; the manual sync must match it.
-    from("../contract/src/managed/PrivateVault/keys")
-    from("../contract/src/managed/PrivateVault/zkir") { include("*.bzkir") }
-    into(layout.projectDirectory.dir("src/main/assets/private-vault-keys"))
-}
-tasks.named("preBuild") { dependsOn(syncPrivateVaultRuntime, syncPrivateVaultKeys) }
 
 dependencies {
     // Kuira SDK — one dep, full graph (Sigil identity, embedded wallet,

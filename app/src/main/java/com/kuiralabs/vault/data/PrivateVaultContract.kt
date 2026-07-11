@@ -1,6 +1,7 @@
 package com.kuiralabs.vault.data
 
 import android.content.Context
+import com.midnight.kuira.contract.generated.privatevault.PrivateVaultContract as GeneratedPrivateVault
 import com.midnight.kuira.core.compact.CircuitExecutionException
 import com.midnight.kuira.core.compact.ContractCallStage
 import com.midnight.kuira.core.compact.MidnightContract
@@ -28,11 +29,13 @@ import java.math.BigInteger
  */
 internal object PrivateVaultContract {
 
-    private const val NAME = "private-vault"
-    // Dedicated asset dirs (synced by the app's syncPrivateVault* Gradle tasks) so the private
-    // vault's keys stay separate from the public vault's plugin-synced runtime/ + keys/.
-    private const val CONTRACT_JS_ASSET = "private-vault-runtime/$NAME-contract.js"
-    private const val KEYS_DIR = "private-vault-keys"
+    // Asset paths come from the generated facade's constants — ONE source shared with the plugin's
+    // contracts{} sync. The container namespaces this contract's keys under KEYS_ASSET_DIR
+    // ("private-vault-keys") so they stay separate from the public vault's ("vault-keys"), and its
+    // runtime JS is alias-named in the shared assets/runtime/ (RUNTIME_ASSET).
+    private const val NAME = GeneratedPrivateVault.CONTRACT_ALIAS
+    private const val CONTRACT_JS_ASSET = GeneratedPrivateVault.RUNTIME_ASSET
+    private const val KEYS_DIR = GeneratedPrivateVault.KEYS_ASSET_DIR
     const val ROSTER_SIZE = 5   // matches PrivateVault.compact's fixed Vector<5>
 
     private fun loadAllVerifierKeys(context: Context): Map<String, ByteArray> {

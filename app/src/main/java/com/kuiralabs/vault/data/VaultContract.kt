@@ -1,20 +1,20 @@
 package com.kuiralabs.vault.data
 
 import android.content.Context
-import com.midnight.kuira.contract.generated.ContractAddress
-import com.midnight.kuira.contract.generated.Either
-import com.midnight.kuira.contract.generated.Proposal
-import com.midnight.kuira.contract.generated.Recipient
-import com.midnight.kuira.contract.generated.RecipientKind
-import com.midnight.kuira.contract.generated.VaultContract as GeneratedVault
-import com.midnight.kuira.contract.generated.ZswapCoinPublicKey
-import com.midnight.kuira.contract.generated.decodeGetApprovalCountResult
-import com.midnight.kuira.contract.generated.decodeGetProposalResult
-import com.midnight.kuira.contract.generated.decodeGetSignerCountResult
-import com.midnight.kuira.contract.generated.decodeGetThresholdResult
-import com.midnight.kuira.contract.generated.decodeGetUnshieldedBalanceResult
-import com.midnight.kuira.contract.generated.decodeIsApprovedBySignerResult
-import com.midnight.kuira.contract.generated.decodeIsSignerResult
+import com.midnight.kuira.contract.generated.vault.ContractAddress
+import com.midnight.kuira.contract.generated.vault.Either
+import com.midnight.kuira.contract.generated.vault.Proposal
+import com.midnight.kuira.contract.generated.vault.Recipient
+import com.midnight.kuira.contract.generated.vault.RecipientKind
+import com.midnight.kuira.contract.generated.vault.VaultContract as GeneratedVault
+import com.midnight.kuira.contract.generated.vault.ZswapCoinPublicKey
+import com.midnight.kuira.contract.generated.vault.decodeGetApprovalCountResult
+import com.midnight.kuira.contract.generated.vault.decodeGetProposalResult
+import com.midnight.kuira.contract.generated.vault.decodeGetSignerCountResult
+import com.midnight.kuira.contract.generated.vault.decodeGetThresholdResult
+import com.midnight.kuira.contract.generated.vault.decodeGetUnshieldedBalanceResult
+import com.midnight.kuira.contract.generated.vault.decodeIsApprovedBySignerResult
+import com.midnight.kuira.contract.generated.vault.decodeIsSignerResult
 import com.midnight.kuira.core.compact.CircuitExecutionException
 import com.midnight.kuira.core.compact.ContractCallStage
 import com.midnight.kuira.core.compact.MidnightContract
@@ -33,9 +33,12 @@ import java.math.BigInteger
 // each circuit's keys as keys/<circuit>.{prover,verifier,bzkir}.
 internal object VaultContract {
 
-    private const val NAME = "vault"
-    private const val CONTRACT_JS_ASSET = "runtime/$NAME-contract.js"
-    private const val KEYS_DIR = "keys"
+    // Asset paths come from the generated facade's constants — ONE source shared with the plugin's
+    // sync, so a rename can't drift the two. KEYS_DIR is now the per-alias "vault-keys" (the
+    // contracts{} container namespaces keys so the public + private vaults don't collide).
+    private const val NAME = GeneratedVault.CONTRACT_ALIAS
+    private const val CONTRACT_JS_ASSET = GeneratedVault.RUNTIME_ASSET
+    private const val KEYS_DIR = GeneratedVault.KEYS_ASSET_DIR
 
     // Embed every circuit's verifier key at deploy so all circuits are callable
     // on-chain. (Calls don't pass verifier keys — they're fetched from chain.)
@@ -48,7 +51,7 @@ internal object VaultContract {
     }
 
     private fun installProvingKeys(context: Context) {
-        ProvingKeyManager(context).installCircuitKeysFromAssets()
+        ProvingKeyManager(context).installCircuitKeysFromAssets(KEYS_DIR)
     }
 
     private fun buildHandle(

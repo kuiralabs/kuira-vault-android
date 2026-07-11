@@ -4,9 +4,9 @@ import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.kuiralabs.vault.data.VaultContract
-import com.midnight.kuira.contract.generated.ProposalStatus
-import com.midnight.kuira.contract.generated.RecipientKind
-import com.midnight.kuira.contract.generated.VaultContract as GeneratedVault
+import com.midnight.kuira.contract.generated.vault.ProposalStatus
+import com.midnight.kuira.contract.generated.vault.RecipientKind
+import com.midnight.kuira.contract.generated.vault.VaultContract as GeneratedVault
 import com.midnight.kuira.core.compact.ContractCallException
 import com.midnight.kuira.core.crypto.address.Bech32m
 import com.midnight.kuira.core.compact.proving.ProvingKeyManager
