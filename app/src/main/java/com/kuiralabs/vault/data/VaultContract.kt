@@ -1,9 +1,20 @@
 package com.kuiralabs.vault.data
 
 import android.content.Context
+import com.midnight.kuira.contract.generated.ContractAddress
+import com.midnight.kuira.contract.generated.Either
+import com.midnight.kuira.contract.generated.Proposal
 import com.midnight.kuira.contract.generated.Recipient
 import com.midnight.kuira.contract.generated.RecipientKind
 import com.midnight.kuira.contract.generated.VaultContract as GeneratedVault
+import com.midnight.kuira.contract.generated.ZswapCoinPublicKey
+import com.midnight.kuira.contract.generated.decodeGetApprovalCountResult
+import com.midnight.kuira.contract.generated.decodeGetProposalResult
+import com.midnight.kuira.contract.generated.decodeGetSignerCountResult
+import com.midnight.kuira.contract.generated.decodeGetThresholdResult
+import com.midnight.kuira.contract.generated.decodeGetUnshieldedBalanceResult
+import com.midnight.kuira.contract.generated.decodeIsApprovedBySignerResult
+import com.midnight.kuira.contract.generated.decodeIsSignerResult
 import com.midnight.kuira.core.compact.CircuitExecutionException
 import com.midnight.kuira.core.compact.ContractCallStage
 import com.midnight.kuira.core.compact.MidnightContract
@@ -11,7 +22,6 @@ import com.midnight.kuira.core.compact.proving.ProvingKeyManager
 import com.midnight.kuira.sdk.MidnightSdk
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
-import org.json.JSONObject
 import java.math.BigInteger
 
 // Thin wrapper around MidnightContract for the Vault — the unshielded multisig
@@ -261,38 +271,46 @@ internal object VaultContract {
         val status: Int,
     )
 
+    // Each read delegates to the plugin-generated typed facade (read<Name> + result decoders); the
+    // generated code owns the JSON decode, so there is no hand-written parsing here.
+
     suspend fun getThreshold(handle: MidnightContract): Int =
-        jsonScalar(handle.read("getThreshold")).toInt()
+        GeneratedVault(handle).readGetThreshold().toInt()
 
     suspend fun getSignerCount(handle: MidnightContract): Int =
-        jsonScalar(handle.read("getSignerCount")).toInt()
+        GeneratedVault(handle).readGetSignerCount().toInt()
 
     suspend fun getUnshieldedBalance(handle: MidnightContract, color: ByteArray): BigInteger =
-        BigInteger(jsonScalar(handle.read("getUnshieldedBalance", color)))
+        GeneratedVault(handle).readGetUnshieldedBalance(color)
 
     suspend fun getApprovalCount(handle: MidnightContract, proposalId: Long): Int =
-        jsonScalar(handle.read("getApprovalCount", BigInteger.valueOf(proposalId))).toInt()
+        GeneratedVault(handle).readGetApprovalCount(BigInteger.valueOf(proposalId)).toInt()
 
     suspend fun getProposalStatus(handle: MidnightContract, proposalId: Long): Int =
-        jsonScalar(handle.read("getProposalStatus", BigInteger.valueOf(proposalId))).toInt()
+        GeneratedVault(handle).readGetProposalStatus(BigInteger.valueOf(proposalId)).ordinal
 
     /** Whether [coinPublicKey] is a registered signer of this Vault (can it approve?). */
     suspend fun isSignerByKey(handle: MidnightContract, coinPublicKey: ByteArray): Boolean =
-        jsonScalar(handle.read("isSigner", signerStruct(coinPublicKey))).toBooleanStrict()
+        GeneratedVault(handle).readIsSigner(eitherFor(coinPublicKey))
 
     suspend fun getProposal(handle: MidnightContract, proposalId: Long): OnChainProposal =
-        parseProposal(handle.read("getProposal", BigInteger.valueOf(proposalId)))
+        GeneratedVault(handle).readGetProposal(BigInteger.valueOf(proposalId)).toOnChain()
 
-    private fun parseProposal(json: String): OnChainProposal {
-        val o = JSONObject(json)
-        val to = o.getJSONObject("to")
-        return OnChainProposal(
-            recipientKind = to.getInt("kind"),
-            recipientHashHex = bytesHex(to, "address"),
-            amountBase = BigInteger(o.getString("amount")),
-            status = o.getInt("status"),
-        )
-    }
+    /**
+     * The generated `Either<ZswapCoinPublicKey, ContractAddress>` signer, coin-key (left) arm — the
+     * typed form the generated `readIsSigner` / `readIsApprovedBySigner` take. Mirrors [signerStruct]
+     * (which stays for the deploy/constructor-arg path the facade doesn't model).
+     */
+    private fun eitherFor(coinPublicKey: ByteArray): Either =
+        Either(is_left = true, left = ZswapCoinPublicKey(coinPublicKey), right = ContractAddress(ByteArray(32)))
+
+    /** Map the generated [Proposal] to the app's on-chain view model (enum ordinals, hex address). */
+    private fun Proposal.toOnChain(): OnChainProposal = OnChainProposal(
+        recipientKind = to.kind.ordinal,
+        recipientHashHex = to.address.toHex(),
+        amountBase = amount,
+        status = status.ordinal,
+    )
 
     /**
      * Enumerate all proposals from chain. Proposal ids are contiguous from 1; getProposal throws
@@ -320,9 +338,7 @@ internal object VaultContract {
 
     /** Whether [coinPublicKey] has already approved proposal [proposalId] (isApprovedBySigner). */
     suspend fun isApprovedByKey(handle: MidnightContract, proposalId: Long, coinPublicKey: ByteArray): Boolean =
-        jsonScalar(
-            handle.read("isApprovedBySigner", BigInteger.valueOf(proposalId), signerStruct(coinPublicKey)),
-        ).toBooleanStrict()
+        GeneratedVault(handle).readIsApprovedBySigner(BigInteger.valueOf(proposalId), eitherFor(coinPublicKey))
 
     /** The ProposalManager assert message that marks walking past the last proposal id. */
     private const val PROPOSAL_NOT_FOUND = "proposal not found"
@@ -385,10 +401,12 @@ internal object VaultContract {
             r.error?.let { throw CircuitExecutionException("Vault read '$key' failed: $it") }
             return r.json!!
         }
-        val threshold = jsonScalar(ok("threshold")).toInt()
-        val signerCount = jsonScalar(ok("signers")).toInt()
-        val balance = BigInteger(jsonScalar(ok("balance")))
-        val isSigner = jsonScalar(ok("isSigner")).toBooleanStrict()
+        // Decode each batched read with the SAME generated result decoders read<Name>() uses — the
+        // batched path (readMany) and the single-read path share one decode, no hand-written parsing.
+        val threshold = decodeGetThresholdResult(ok("threshold")).toInt()
+        val signerCount = decodeGetSignerCountResult(ok("signers")).toInt()
+        val balance = decodeGetUnshieldedBalanceResult(ok("balance"))
+        val isSigner = decodeIsSignerResult(ok("isSigner"))
 
         val proposals = mutableListOf<SnapshotProposal>()
         outer@ while (true) {
@@ -403,9 +421,9 @@ internal object VaultContract {
                 }
                 proposals += SnapshotProposal(
                     id = id,
-                    proposal = parseProposal(p.json!!),
-                    approvals = jsonScalar(ok("a:$id")).toInt(),
-                    approvedByMe = jsonScalar(ok("m:$id")).toBooleanStrict(),
+                    proposal = decodeGetProposalResult(p.json!!).toOnChain(),
+                    approvals = decodeGetApprovalCountResult(ok("a:$id")).toInt(),
+                    approvedByMe = decodeIsApprovedBySignerResult(ok("m:$id")),
                 )
             }
             if (proposals.size >= maxProposals) break
@@ -421,19 +439,6 @@ internal object VaultContract {
     // every FRESH proposal (Active == 1) as executed in the UI.
     const val PROPOSAL_STATUS_ACTIVE = 1
     const val PROPOSAL_STATUS_EXECUTED = 2
-
-    /** Parse a JSON scalar (a quoted Uint decimal string, a number, or a boolean) to its text form. */
-    private fun jsonScalar(json: String): String = org.json.JSONTokener(json).nextValue().toString()
-
-    /**
-     * Decode a Compact Bytes field to hex. read() emits a top-level Bytes as a hex string, but a
-     * Bytes nested in a struct arrives as a JSON array of byte values — accept both.
-     */
-    private fun bytesHex(o: JSONObject, key: String): String = when (val v = o.get(key)) {
-        is String -> v
-        is org.json.JSONArray -> (0 until v.length()).joinToString("") { "%02x".format(v.getInt(it) and 0xFF) }
-        else -> v.toString()
-    }
 
     private const val LEDGER_APPROVAL_COUNT = "_approvalCount"
 
