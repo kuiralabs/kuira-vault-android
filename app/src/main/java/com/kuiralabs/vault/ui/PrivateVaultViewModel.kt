@@ -61,6 +61,7 @@ class PrivateVaultViewModel @Inject constructor(
     private var approvalStreamJob: Job? = null
     private var readHandle: MidnightContract? = null
     private var readHandleAddress: String? = null
+    private var readHandleSdk: MidnightSdk? = null
 
     init {
         viewModelScope.launch {
@@ -374,13 +375,20 @@ class PrivateVaultViewModel @Inject constructor(
     private fun stopStreams() {
         refreshJob?.cancel(); refreshJob = null
         approvalStreamJob?.cancel(); approvalStreamJob = null
-        readHandle = null; readHandleAddress = null
+        readHandle = null; readHandleAddress = null; readHandleSdk = null
     }
 
+    // Re-created when the address changes OR when the shared SDK instance is
+    // swapped out. The SDK is replaced — and the old one CLOSED — on every
+    // session re-auth (SessionLock drops it on device-lock; MidnightSdkProvider
+    // republishes on unlock) or network switch, which tears down the old
+    // indexer/node clients. A read handle bound to a closed SDK yields dead
+    // streams + failing reads, so key the cache on the SDK identity too.
     private fun readHandleFor(sdk: MidnightSdk, address: String): MidnightContract {
-        if (readHandle == null || readHandleAddress != address) {
+        if (readHandle == null || readHandleAddress != address || readHandleSdk !== sdk) {
             readHandle = PrivateVaultContract.buildReadHandle(context, sdk, address)
             readHandleAddress = address
+            readHandleSdk = sdk
         }
         return readHandle!!
     }
