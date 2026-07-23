@@ -143,6 +143,40 @@ internal object VaultContract {
     }
 
     /**
+     * MONEY-PATH DEMO (kuira-sdk-android#4) — deposit [amount] with NO explicit funding offer,
+     * exercising the SDK's auto-fund. [autoFund] makes THIS call authoritative over the policy:
+     *  - true  → Layer 2: the SDK's two-pass auto-fund fills the offer from the wallet.
+     *  - false → Layer 1: [ContractCallException.UnshieldedValueUnfunded] is thrown (no offer, no
+     *    auto-fund) — the clear, typed error a dApp can catch and explain.
+     *
+     * The real Public/Private deposit flows always pass an EXPLICIT offer, which bypasses auto-fund
+     * entirely (explicit wins), so flipping this config here never affects them.
+     */
+    suspend fun depositUnshieldedAutoFund(
+        context: Context,
+        sdk: MidnightSdk,
+        address: String,
+        color: ByteArray,
+        amount: BigInteger,
+        autoFund: Boolean,
+        onProgress: (suspend (ContractCallStage) -> Unit)? = null,
+    ) {
+        installProvingKeys(context)
+        // Mirror the SDK builder's default provider; make this call decide the policy.
+        sdk.config.configureUnshieldedAutoFund(autoFund) { tokenHex, amt ->
+            sdk.buildUnshieldedFundingJson(amt, tokenHex)
+        }
+        val handle = buildHandle(
+            context, sdk, address = address, forWrite = true,
+            constructorArgs = callConstructorArgs(),
+        )
+        // The GENERATED typed facade — depositUnshielded(color, amount) attaches NO funding offer.
+        // Pre-#4 that failed with node error 138 (which is why the explicit depositUnshielded above
+        // hand-rolls handle.call with a manual offer); with auto-fund it just works.
+        GeneratedVault(handle).depositUnshielded(color, amount, onProgress = onProgress)
+    }
+
+    /**
      * Propose an unshielded withdrawal of [amount] of token [color] to [recipientAddressHash]
      * (a 32-byte UserAddress). Signer-gated — the calling wallet's key must be a Vault signer.
      * The first proposal on a fresh Vault has id 1.
