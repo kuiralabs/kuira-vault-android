@@ -5,6 +5,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.kuiralabs.vault.data.VaultContract
 import com.midnight.kuira.core.compact.ContractCallException
+import com.midnight.kuira.core.crypto.address.Bech32m
 import com.midnight.kuira.core.compact.proving.ProvingKeyManager
 import com.midnight.kuira.core.crypto.bip39.BIP39
 import com.midnight.kuira.core.crypto.proving.ProvingMode
@@ -124,14 +125,57 @@ class MoneyPathE2ETest {
         )
     }
 
+    /**
+     * #4 withdrawal Layer 1 — auto-fund is DEPOSIT-only, so a withdrawal (sendUnshielded) with no
+     * offer has no auto-fill and must surface the typed error. Deploys a threshold-1 Vault (the sole
+     * funded wallet approves on its own), funds it, proposes + approves a withdrawal, then executes
+     * via the generated execute(id) (no withdrawal offer) → UnshieldedValueUnfunded, treasury intact.
+     */
+    @Test
+    fun withdrawWithoutOffer_throwsUnshieldedValueUnfunded() = runBlocking<Unit> {
+        val s = fundedSdk(nightWhole = 50)
+        val address = deployVault(s, threshold = 1)
+        Log.i(TAG, "Vault at $address — withdrawal with NO offer must Layer-1 throw")
+
+        // Fund the treasury so there is value to (attempt to) withdraw.
+        val deposited = BigInteger.valueOf(5_000_000L)
+        assertTrue("deposit must finalize", depositExplicit(s, address, deposited))
+
+        // Propose + approve to the threshold of 1 (deployer is the sole real signer).
+        val recipientHash = Bech32m.decode(s.walletAddress).second
+        VaultContract.proposeWithdrawal(
+            context, s, address,
+            recipientAddressHash = recipientHash, color = NATIVE_COLOR,
+            amount = BigInteger.valueOf(2_000_000L),
+        ) { }
+        VaultContract.approve(context, s, address, proposalId = FIRST_PROPOSAL_ID) { }
+
+        // Execute via the generated execute(id) — NO withdrawal offer.
+        val error = runCatching {
+            VaultContract.executeWithoutWithdrawalOffer(context, s, address, proposalId = FIRST_PROPOSAL_ID) { }
+        }.exceptionOrNull()
+        assertTrue(
+            "a withdrawal with no offer must throw ContractCallException.UnshieldedValueUnfunded, got: $error",
+            error is ContractCallException.UnshieldedValueUnfunded,
+        )
+
+        // The rejected withdrawal must NOT debit the treasury — it stays at the deposited amount.
+        val reader = VaultContract.buildReadHandle(context, s, address)
+        assertEquals(
+            "a rejected (Layer-1) withdrawal must not debit the treasury",
+            deposited,
+            VaultContract.getUnshieldedBalance(reader, NATIVE_COLOR),
+        )
+    }
+
     // ── Harness (mirrors VaultDeployE2ETest — its helpers are private to that class) ──
 
-    /** Deploy a fresh 2-of-3 Vault: the wallet's own coin public key + two placeholders. */
-    private suspend fun deployVault(s: MidnightSdk): String = VaultContract.deploy(
+    /** Deploy a fresh Vault: the wallet's own coin public key + two placeholders, at [threshold]. */
+    private suspend fun deployVault(s: MidnightSdk, threshold: Int = 2): String = VaultContract.deploy(
         context = context,
         sdk = s,
         signerCoinPublicKeys = listOf(s.coinPublicKey, ByteArray(32) { 0x11 }, ByteArray(32) { 0x22 }),
-        threshold = 2,
+        threshold = threshold,
     ) { stage -> Log.i(TAG, "deploy stage: $stage") }
 
     /**
@@ -237,6 +281,7 @@ class MoneyPathE2ETest {
         const val TAG = "MoneyPathE2E"
         const val FUND_TAG = "KuiraE2EFund"
         const val FUND_MARKER = "KUIRA_FUND_REQ"
+        const val FIRST_PROPOSAL_ID = 1L
         val NIGHT_UNIT: BigInteger = BigInteger.valueOf(1_000_000L)
 
         /** 32 zero bytes = native NIGHT. */

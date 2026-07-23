@@ -261,6 +261,28 @@ internal object VaultContract {
     }
 
     /**
+     * MONEY-PATH DEMO/TEST (kuira-sdk-android#4) — execute [proposalId] via the GENERATED `execute(id)`
+     * call, which attaches NO withdrawal offer. sendUnshielded moves value out with no matching offer,
+     * so the SDK throws [ContractCallException.UnshieldedValueUnfunded] (Layer 1). Auto-fund is
+     * DEPOSIT-only — there is no auto-fill for withdrawals, so a withdrawal always needs the explicit
+     * offer that [execute] supplies. Exists to prove that withdrawal error path.
+     */
+    suspend fun executeWithoutWithdrawalOffer(
+        context: Context,
+        sdk: MidnightSdk,
+        address: String,
+        proposalId: Long,
+        onProgress: (suspend (ContractCallStage) -> Unit)? = null,
+    ) {
+        installProvingKeys(context)
+        val handle = buildHandle(
+            context, sdk, address = address, forWrite = true,
+            constructorArgs = callConstructorArgs(),
+        )
+        GeneratedVault(handle).execute(BigInteger.valueOf(proposalId), onProgress = onProgress)
+    }
+
+    /**
      * Read-only handle for observing the Vault's ledger state and calling view circuits (no signing
      * keys needed). Includes the constructor args: a view-call read runs initialState() (then swaps
      * in the on-chain state), so a constructor-args contract needs shape-valid args to pass its

@@ -106,16 +106,12 @@ class MoneyPathViewModel @Inject constructor(
             _result.value = null
             try {
                 block(sdk, address)
-            } catch (e: ContractCallException.UnshieldedValueUnfunded) {
-                // Layer 1 — the SDK's clear, typed error (auto-fund off, no offer supplied).
-                _result.value = MoneyPathResult.TypedError(
-                    e.message ?: "The deposit moved unshielded value with no funding offer.",
-                )
             } catch (t: Throwable) {
-                Log.e(TAG, "money-path deposit failed", t)
-                _result.value = MoneyPathResult.Failure(
-                    t.message ?: t::class.simpleName ?: "Unknown error",
-                )
+                // Classify via the unit-tested MoneyPathResult.forError; log only genuine failures
+                // (the Layer-1 typed error is an expected, demonstrated outcome, not a fault).
+                val classified = MoneyPathResult.forError(t)
+                if (classified is MoneyPathResult.Failure) Log.e(TAG, "money-path deposit failed", t)
+                _result.value = classified
             } finally {
                 _busy.value = false
                 _callStage.value = null
@@ -141,4 +137,18 @@ sealed interface MoneyPathResult {
 
     /** Any other failure (wallet not ready, insufficient funds, node error, …). */
     data class Failure(val detail: String) : MoneyPathResult
+
+    companion object {
+        /**
+         * Classify a thrown deposit error: the SDK's typed Layer-1
+         * [ContractCallException.UnshieldedValueUnfunded] becomes a [TypedError]; anything else a
+         * [Failure]. Extracted (and unit-tested) so the ViewModel's catch can't silently misclassify
+         * the typed error as a generic failure.
+         */
+        fun forError(t: Throwable): MoneyPathResult = when (t) {
+            is ContractCallException.UnshieldedValueUnfunded ->
+                TypedError(t.message ?: "The deposit moved unshielded value with no funding offer.")
+            else -> Failure(t.message ?: t::class.simpleName ?: "Unknown error")
+        }
+    }
 }
