@@ -48,7 +48,8 @@ class PrivateVaultDeployE2ETest {
 
     @After
     fun tearDown() {
-        openSdks.forEach { runCatching { it.close() } }
+        // close() is suspend as of alpha06 (DustLocalState teardown-race fix).
+        runBlocking { openSdks.forEach { runCatching { it.close() } } }
         openSdks.clear()
     }
 
