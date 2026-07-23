@@ -1,5 +1,6 @@
 package com.kuiralabs.vault
 
+import android.graphics.drawable.ColorDrawable
 import android.os.Bundle
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -12,27 +13,34 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.windowInsetsTopHeight
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.kuiralabs.vault.ui.PrivateVaultScreen
 import com.kuiralabs.vault.ui.VaultScreen
+import com.kuiralabs.vault.ui.VaultSplash
+import com.kuiralabs.vault.ui.theme.Steel
+import com.kuiralabs.vault.ui.theme.VaultSteelTheme
+import com.kuiralabs.vault.ui.theme.steelSurface
 import com.midnight.kuira.dapp.PanelBar
 import com.midnight.kuira.dapp.wallet.WalletAppShell
 import com.midnight.kuira.sdk.walletruntime.MidnightSdkProvider
 import com.midnight.kuira.sdk.walletruntime.SessionLock
 import com.midnight.kuira.sdk.walletruntime.WalletNotifications
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.delay
 import javax.inject.Inject
 
 // AppCompatActivity (not ComponentActivity) because SigilStatusPanel hosts
@@ -52,6 +60,8 @@ class MainActivity : AppCompatActivity() {
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* best-effort */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Dark window ground so the pre-Compose frame doesn't flash white before the splash.
+        window.setBackgroundDrawable(ColorDrawable(0xFF0A0A0B.toInt()))
         super.onCreate(savedInstanceState)
         if (WalletNotifications.shouldRequest(this)) {
             notifPermission.launch(WalletNotifications.PERMISSION)
@@ -61,8 +71,12 @@ class MainActivity : AppCompatActivity() {
             // Send / Receive / Settings overlays render in the activity window). Both vault
             // flavors live under the ONE shell so they share the lock + wallet overlays.
             WalletAppShell {
-                MaterialTheme {
-                    Surface(modifier = Modifier.fillMaxSize()) {
+                VaultSteelTheme {
+                    Surface(
+                        Modifier.fillMaxSize().steelSurface(),
+                        color = Color.Transparent,
+                        contentColor = Steel.OnSteel,
+                    ) {
                         val network by sdkProvider.selectedNetwork.collectAsState()
                         // The floating pills MUST live at the window root: PanelBar(floating) sizes
                         // its drag range to its container + systemBarsPadding, so nesting it inside a
@@ -75,6 +89,16 @@ class MainActivity : AppCompatActivity() {
                                 network = network,
                                 onNetworkChange = sdkProvider::selectNetwork,
                             )
+
+                            var splashVisible by remember { mutableStateOf(true) }
+                            var splashMounted by remember { mutableStateOf(true) }
+                            LaunchedEffect(Unit) {
+                                delay(1500)
+                                splashVisible = false
+                                delay(450)
+                                splashMounted = false
+                            }
+                            if (splashMounted) VaultSplash(visible = splashVisible)
                         }
                     }
                 }
