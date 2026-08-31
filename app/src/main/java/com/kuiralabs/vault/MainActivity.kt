@@ -28,7 +28,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import com.kuiralabs.vault.ui.MoneyPathScreen
 import com.kuiralabs.vault.ui.PrivateVaultScreen
 import com.kuiralabs.vault.ui.VaultScreen
 import com.kuiralabs.vault.ui.VaultSplash
@@ -119,12 +118,11 @@ class MainActivity : AppCompatActivity() {
             PrimaryTabRow(selectedTabIndex = tab) {
                 Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Public") })
                 Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Private") })
-                Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text("Money Path") })
             }
             when (tab) {
                 0 -> VaultScreen()
                 1 -> PrivateVaultScreen()
-                else -> MoneyPathScreen()
+                else -> PrivateVaultScreen()
             }
         }
     }
