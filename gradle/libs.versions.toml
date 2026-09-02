@@ -12,11 +12,11 @@ androidxLifecycle = "2.8.7"
 androidxHiltNavCompose = "1.1.0"
 androidxSecurityCrypto = "1.1.0-alpha07"
 
-# Kuira SDK — the in-progress alpha05 work, resolved from mavenLocal (see
+# Kuira SDK — the in-progress alpha06 work, resolved from mavenLocal (see
 # settings.gradle.kts). A single dapp-ui dep transitively pulls in the full
 # graph (midnight-sdk, wallet-runtime, identity, auth, compact-engine, indexer,
 # designsystem).
-kuira = "0.1.0-alpha05"
+kuira = "0.1.0-alpha06"
 
 [libraries]
 androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "androidxAppcompat" }
