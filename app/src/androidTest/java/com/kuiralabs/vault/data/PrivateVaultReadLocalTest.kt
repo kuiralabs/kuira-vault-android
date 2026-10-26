@@ -7,6 +7,7 @@ import com.midnight.kuira.core.compact.MidnightConfig
 import com.midnight.kuira.core.compact.MidnightContract
 import com.midnight.kuira.core.network.MidnightNetwork
 import com.midnight.kuira.core.network.NetworkConfig
+import com.midnight.kuira.contract.generated.privatevault.PrivateVaultContract as GeneratedPrivateVault
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -52,8 +53,8 @@ class PrivateVaultReadLocalTest {
 
     private fun handle(withCtorArgs: Boolean): MidnightContract =
         MidnightContract.create(config) {
-            name = "private-vault"
-            contractJs = context.assets.open("private-vault-runtime/private-vault-contract.js")
+            name = GeneratedPrivateVault.CONTRACT_ALIAS
+            contractJs = context.assets.open(GeneratedPrivateVault.RUNTIME_ASSET)
             if (withCtorArgs) constructorArgs = ctorArgs()
         }
 
