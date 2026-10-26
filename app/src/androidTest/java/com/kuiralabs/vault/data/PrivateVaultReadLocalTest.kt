@@ -5,6 +5,8 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.midnight.kuira.core.compact.MidnightConfig
 import com.midnight.kuira.core.compact.MidnightContract
+import com.midnight.kuira.core.network.MidnightNetwork
+import com.midnight.kuira.core.network.NetworkConfig
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -34,10 +36,11 @@ class PrivateVaultReadLocalTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
 
     // readLocal never hits the chain or the wallet; the URLs only satisfy the config builder.
+    private val localnet = NetworkConfig.forNetwork(MidnightNetwork.UNDEPLOYED)
     private val config = MidnightConfig.Builder(context)
-        .indexerUrl("http://10.0.2.2:8088/api/v4")
+        .indexerGraphqlUrl(localnet.indexerGraphqlUrl)
         .walletUrl("ws://10.0.2.2:8080")
-        .networkId("undeployed")
+        .networkId(MidnightNetwork.UNDEPLOYED.rustNetworkId)
         .build()
 
     // Shape-valid placeholder constructor args (Vector<5, Bytes<32>> + Bytes<32>), discarded by a
